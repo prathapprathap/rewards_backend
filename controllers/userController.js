@@ -69,3 +69,72 @@ exports.getUserProfile = async (req, res) => {
         return res.status(500).json({ message: 'Server error' });
     }
 };
+
+// Get offers with scratch status for a specific user
+exports.getUserOffers = async (req, res) => {
+    const { userId } = req.params;
+
+    try {
+        // Get all offers
+        const [offers] = await db.query('SELECT * FROM offers WHERE status = ? ORDER BY created_at DESC', ['active']);
+
+        // Get scratched offers for this user
+        const [scratched] = await db.query(
+            'SELECT offer_id FROM scratched_offers WHERE user_id = ?',
+            [userId]
+        );
+
+        const scratchedIds = new Set(scratched.map(s => s.offer_id));
+
+        // Mark offers as scratched or not
+        const offersWithStatus = offers.map(offer => ({
+            ...offer,
+            is_scratched: scratchedIds.has(offer.id)
+        }));
+
+        return res.status(200).json(offersWithStatus);
+    } catch (error) {
+        console.error('Error in getUserOffers:', error);
+        return res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// Mark an offer as scratched
+exports.scratchOffer = async (req, res) => {
+    const { userId } = req.params;
+    const { offer_id } = req.body;
+
+    if (!offer_id) {
+        return res.status(400).json({ message: 'Offer ID is required' });
+    }
+
+    try {
+        // Check if already scratched
+        const [existing] = await db.query(
+            'SELECT * FROM scratched_offers WHERE user_id = ? AND offer_id = ?',
+            [userId, offer_id]
+        );
+
+        if (existing.length > 0) {
+            return res.status(200).json({ message: 'Already scratched', already_scratched: true });
+        }
+
+        // Mark as scratched
+        await db.query(
+            'INSERT INTO scratched_offers (user_id, offer_id) VALUES (?, ?)',
+            [userId, offer_id]
+        );
+
+        // Get the offer details
+        const [offer] = await db.query('SELECT * FROM offers WHERE id = ?', [offer_id]);
+
+        return res.status(200).json({
+            message: 'Offer scratched successfully',
+            offer: offer[0],
+            already_scratched: false
+        });
+    } catch (error) {
+        console.error('Error in scratchOffer:', error);
+        return res.status(500).json({ message: 'Server error' });
+    }
+};
