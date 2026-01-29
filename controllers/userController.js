@@ -211,8 +211,33 @@ exports.useSpin = async (req, res) => {
             ['spin_reward_values']
         );
 
-        const rewardValues = settings[0]?.setting_value.split(',').map(v => parseInt(v)) || [1, 2, 5, 10];
-        const reward = rewardValues[Math.floor(Math.random() * rewardValues.length)];
+        const rewardValues = settings[0]?.setting_value.split(',').map(v => parseInt(v.trim())) || [1, 2, 5, 10];
+
+        // Weighted random selection to favor lower values
+        // Algorithm:
+        // 1. Assign High weights to values <= 10
+        // 2. Assign Low weights to values > 10
+        const itemsWithWeights = rewardValues.map(value => {
+            let weight = 0;
+            if (value <= 2) weight = 50;       // Very high chance for 1, 2
+            else if (value <= 5) weight = 30;  // High chance for 5
+            else if (value <= 10) weight = 15; // Moderate chance for 10
+            else if (value <= 50) weight = 4;  // Low chance for 25, 50
+            else weight = 1;                   // Very low chance for 100+
+            return { value, weight };
+        });
+
+        const totalWeight = itemsWithWeights.reduce((sum, item) => sum + item.weight, 0);
+        let randomNum = Math.random() * totalWeight;
+
+        let reward = itemsWithWeights[0].value;
+        for (const item of itemsWithWeights) {
+            if (randomNum < item.weight) {
+                reward = item.value;
+                break;
+            }
+            randomNum -= item.weight;
+        }
 
         // Deduct spin and add reward to wallet
         await db.query(
