@@ -184,6 +184,50 @@ const initDB = async () => {
     await promisePool.query(createScratchedOffersTable);
     console.log('Scratched offers table checked/created successfully.');
 
+    const createAppSettingsTable = `
+      CREATE TABLE IF NOT EXISTS app_settings (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        setting_key VARCHAR(100) UNIQUE NOT NULL,
+        setting_value TEXT NOT NULL,
+        description VARCHAR(255),
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )
+    `;
+    await promisePool.query(createAppSettingsTable);
+    console.log('App settings table checked/created successfully.');
+
+    // Insert default settings if not exists
+    const defaultSettings = [
+      ['new_user_spin_bonus', '2', 'Number of free spins for new users'],
+      ['new_user_coin_bonus', '0', 'Bonus coins for new users'],
+      ['referral_reward', '10', 'Coins earned when someone uses your referral code'],
+      ['min_withdrawal', '100', 'Minimum amount for withdrawal'],
+      ['spin_reward_values', '1,2,5,10,25,50,100', 'Possible spin wheel reward values (comma-separated)'],
+    ];
+
+    for (const [key, value, description] of defaultSettings) {
+      await promisePool.query(
+        'INSERT IGNORE INTO app_settings (setting_key, setting_value, description) VALUES (?, ?, ?)',
+        [key, value, description]
+      );
+    }
+    console.log('Default app settings initialized.');
+
+    const createUserSpinsTable = `
+      CREATE TABLE IF NOT EXISTS user_spins (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        available_spins INT DEFAULT 0,
+        total_spins_earned INT DEFAULT 0,
+        total_spins_used INT DEFAULT 0,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        UNIQUE KEY unique_user (user_id)
+      )
+    `;
+    await promisePool.query(createUserSpinsTable);
+    console.log('User spins table checked/created successfully.');
+
   } catch (error) {
     console.error('Error initializing database:', error);
   }

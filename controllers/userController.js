@@ -35,17 +35,38 @@ exports.loginWithGoogle = async (req, res) => {
                 [google_id, email, name, profile_pic, device_id]
             );
 
+            const userId = result.insertId;
+
+            // Get new user bonus from settings
+            const [bonusSettings] = await db.query(
+                'SELECT setting_value FROM app_settings WHERE setting_key = ?',
+                ['new_user_spin_bonus']
+            );
+            const bonusSpins = parseInt(bonusSettings[0]?.setting_value || '2');
+
+            // Credit bonus spins to new user
+            await db.query(
+                `INSERT INTO user_spins (user_id, available_spins, total_spins_earned) 
+                 VALUES (?, ?, ?)`,
+                [userId, bonusSpins, bonusSpins]
+            );
+
             const newUser = {
-                id: result.insertId,
+                id: userId,
                 google_id,
                 email,
                 name,
                 profile_pic,
                 device_id,
-                wallet_balance: 0.00
+                wallet_balance: 0.00,
+                total_earnings: 0.00
             };
 
-            return res.status(201).json({ message: 'User registered successfully', user: newUser });
+            return res.status(201).json({
+                message: 'User registered successfully',
+                user: newUser,
+                bonus_spins: bonusSpins
+            });
         }
     } catch (error) {
         console.error('Error in loginWithGoogle:', error);
@@ -135,6 +156,109 @@ exports.scratchOffer = async (req, res) => {
         });
     } catch (error) {
         console.error('Error in scratchOffer:', error);
+        return res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// Get user's available spins
+exports.getUserSpins = async (req, res) => {
+    const { userId } = req.params;
+
+    try {
+        const [spins] = await db.query(
+            'SELECT * FROM user_spins WHERE user_id = ?',
+            [userId]
+        );
+
+        if (spins.length === 0) {
+            // Create default spin record if doesn't exist
+            await db.query(
+                'INSERT INTO user_spins (user_id, available_spins) VALUES (?, ?)',
+                [userId, 0]
+            );
+            return res.status(200).json({
+                available_spins: 0,
+                total_spins_earned: 0,
+                total_spins_used: 0
+            });
+        }
+
+        return res.status(200).json(spins[0]);
+    } catch (error) {
+        console.error('Error in getUserSpins:', error);
+        return res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// Use a spin and get reward
+exports.useSpin = async (req, res) => {
+    const { userId } = req.params;
+
+    try {
+        // Check available spins
+        const [spins] = await db.query(
+            'SELECT * FROM user_spins WHERE user_id = ?',
+            [userId]
+        );
+
+        if (spins.length === 0 || spins[0].available_spins <= 0) {
+            return res.status(400).json({ message: 'No spins available' });
+        }
+
+        // Get spin reward values from settings
+        const [settings] = await db.query(
+            'SELECT setting_value FROM app_settings WHERE setting_key = ?',
+            ['spin_reward_values']
+        );
+
+        const rewardValues = settings[0]?.setting_value.split(',').map(v => parseInt(v)) || [1, 2, 5, 10];
+        const reward = rewardValues[Math.floor(Math.random() * rewardValues.length)];
+
+        // Deduct spin and add reward to wallet
+        await db.query(
+            'UPDATE user_spins SET available_spins = available_spins - 1, total_spins_used = total_spins_used + 1 WHERE user_id = ?',
+            [userId]
+        );
+
+        await db.query(
+            'UPDATE users SET wallet_balance = wallet_balance + ?, total_earnings = total_earnings + ? WHERE id = ?',
+            [reward, reward, userId]
+        );
+
+        // Record transaction
+        await db.query(
+            'INSERT INTO transactions (user_id, type, amount, description) VALUES (?, ?, ?, ?)',
+            [userId, 'CREDIT', reward, 'Spin & Win reward']
+        );
+
+        // Get updated data
+        const [updatedSpins] = await db.query('SELECT * FROM user_spins WHERE user_id = ?', [userId]);
+        const [updatedUser] = await db.query('SELECT wallet_balance, total_earnings FROM users WHERE id = ?', [userId]);
+
+        return res.status(200).json({
+            message: 'Spin successful',
+            reward,
+            available_spins: updatedSpins[0].available_spins,
+            wallet_balance: parseFloat(updatedUser[0].wallet_balance),
+            total_earnings: parseFloat(updatedUser[0].total_earnings)
+        });
+    } catch (error) {
+        console.error('Error in useSpin:', error);
+        return res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// Get app settings
+exports.getAppSettings = async (req, res) => {
+    try {
+        const [settings] = await db.query('SELECT * FROM app_settings');
+        const settingsObj = {};
+        settings.forEach(s => {
+            settingsObj[s.setting_key] = s.setting_value;
+        });
+        return res.status(200).json(settingsObj);
+    } catch (error) {
+        console.error('Error in getAppSettings:', error);
         return res.status(500).json({ message: 'Server error' });
     }
 };
