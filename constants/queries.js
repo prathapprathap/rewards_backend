@@ -50,6 +50,9 @@ module.exports = {
             VALUES (?, ?, ?) 
             ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), description = VALUES(description)
         `,
+        GET_ALL_PROMOCODES: 'SELECT * FROM promocodes ORDER BY created_at DESC',
+        CREATE_PROMOCODE: 'INSERT INTO promocodes (code, amount, users_limit, for_whom, status) VALUES (?, ?, ?, ?, ?)',
+        DELETE_PROMOCODE: 'DELETE FROM promocodes WHERE id = ?',
     },
     WALLET: {
         GET_TRANSACTIONS: 'SELECT * FROM transactions WHERE user_id = ? ORDER BY created_at DESC',

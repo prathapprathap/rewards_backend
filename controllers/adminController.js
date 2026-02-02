@@ -210,3 +210,45 @@ exports.updateAppSettings = async (req, res) => {
         res.status(500).json({ message: 'Server error' });
     }
 };
+
+// --- Promo Codes ---
+
+// Get all promocodes
+exports.getAllPromoCodes = async (req, res) => {
+    try {
+        const [rows] = await db.query(QUERIES.ADMIN.GET_ALL_PROMOCODES);
+        res.status(200).json(rows);
+    } catch (error) {
+        console.error('Error fetching promocodes:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// Create a promocode
+exports.createPromoCode = async (req, res) => {
+    const { code, amount, users_limit, for_whom, status } = req.body;
+
+    try {
+        await db.query(
+            QUERIES.ADMIN.CREATE_PROMOCODE,
+            [code, amount, users_limit, for_whom, status]
+        );
+        res.status(201).json({ message: 'Promo code created successfully' });
+    } catch (error) {
+        console.error('Error creating promocode:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// Delete a promocode
+exports.deletePromoCode = async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        await db.query(QUERIES.ADMIN.DELETE_PROMOCODE, [id]);
+        res.status(200).json({ message: 'Promo code deleted successfully' });
+    } catch (error) {
+        console.error('Error deleting promocode:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};

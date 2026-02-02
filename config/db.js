@@ -215,6 +215,21 @@ const initDB = async () => {
     await promisePool.query(createAppSettingsTable);
     console.log('App settings table checked/created successfully.');
 
+    const createPromoCodesTable = `
+      CREATE TABLE IF NOT EXISTS promocodes (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        code VARCHAR(50) UNIQUE NOT NULL,
+        amount DECIMAL(10, 2) NOT NULL,
+        users_limit INT NOT NULL,
+        claimed_count INT DEFAULT 0,
+        for_whom ENUM('All', 'New', 'Old') DEFAULT 'All',
+        status ENUM('Active', 'Inactive') DEFAULT 'Active',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `;
+    await promisePool.query(createPromoCodesTable);
+    console.log('Promocodes table checked/created successfully.');
+
     // Insert default settings if not exists
     const defaultSettings = [
       ['new_user_spin_bonus', '2', 'Number of free spins for new users'],
@@ -223,6 +238,19 @@ const initDB = async () => {
       ['referral_commission_percent', '10', 'Commission percentage earned when referred users complete tasks'],
       ['min_withdrawal', '100', 'Minimum amount for withdrawal'],
       ['spin_reward_values', '1,2,5,10,25,50,100', 'Possible spin wheel reward values (comma-separated)'],
+      ['site_name', 'Rewardmobi', 'Name of the website'],
+      ['site_url', 'https://rewardmobi.xyz/', 'Website URL'],
+      ['payment_mode', 'Manual', 'Withdrawal payment mode (Manual/Automatic)'],
+      ['update_mode', 'Off', 'App update mode'],
+      ['maintenance_mode', 'Off', 'System maintenance mode status'],
+      ['social_media_links', 'https://t.me/Rewardmobi,https://whatsapp.com', 'Social links (comma separated)'],
+      ['refer_text', 'When your referred friends signup they will get up to 10 Coins...', 'Text shown for referral invites'],
+      ['signup_bonus', '5', 'Initial bonus coins for signing up'],
+      ['per_refer_amount', '5', 'Coins earned per successful referral'],
+      ['captcha_site_key', '6LfR3ZUqAAAAAPX0f5y8F-CfHwUBTVBMA3UMgXj4', 'Google Captcha Site Key'],
+      ['captcha_private_key', '6LfR3ZUqAAAAAMXv8CTaZ6IBPjk7Op_SFQFzhPmn', 'Google Captcha Private Key'],
+      ['earning_percent', '50', 'General earning percentage multiplier'],
+      ['support_email', 'support@rewardmobi.xyz', 'Admin support contact email'],
     ];
 
     for (const [key, value, description] of defaultSettings) {

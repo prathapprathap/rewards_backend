@@ -15,4 +15,8 @@ router.get('/stats', adminController.getDashboardStats);
 router.get('/settings', adminController.getAppSettings);
 router.put('/settings', adminController.updateAppSettings);
 
+router.get('/promocodes', adminController.getAllPromoCodes);
+router.post('/promocodes', adminController.createPromoCode);
+router.delete('/promocodes/:id', adminController.deletePromoCode);
+
 module.exports = router;
