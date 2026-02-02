@@ -10,12 +10,12 @@ exports.loginWithGoogle = async (req, res) => {
 
     try {
         // Check if device is already registered with another account
-        if (device_id) {
-            const [deviceUsers] = await db.query(QUERIES.USER.CHECK_DEVICE_USAGE, [device_id, google_id]);
-            if (deviceUsers.length > 0) {
-                return res.status(403).json({ message: 'This device is already registered with another account. Multiple accounts are not allowed.' });
-            }
-        }
+        // if (device_id) {
+        //     const [deviceUsers] = await db.query(QUERIES.USER.CHECK_DEVICE_USAGE, [device_id, google_id]);
+        //     if (deviceUsers.length > 0) {
+        //         return res.status(403).json({ message: 'This device is already registered with another account. Multiple accounts are not allowed.' });
+        //     }
+        // }
 
         // Check if user exists
         const [rows] = await db.query(QUERIES.USER.CHECK_EXISTING_BY_GOOGLE_ID, [google_id]);
