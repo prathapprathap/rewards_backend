@@ -175,3 +175,38 @@ exports.updateWithdrawalStatus = async (req, res) => {
         res.status(500).json({ message: 'Server error' });
     }
 };
+
+// Get all app settings
+exports.getAppSettings = async (req, res) => {
+    try {
+        const [rows] = await db.query(QUERIES.ADMIN.GET_ALL_SETTINGS);
+        // Convert array of settings to object key-value
+        const settings = rows.reduce((acc, row) => {
+            acc[row.setting_key] = row.setting_value;
+            return acc;
+        }, {});
+        res.status(200).json(settings);
+    } catch (error) {
+        console.error('Error fetching settings:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// Update app settings
+exports.updateAppSettings = async (req, res) => {
+    const settings = req.body; // Expecting { key: value, ... }
+
+    try {
+        // We will loop through provided settings and upsert them
+        for (const [key, value] of Object.entries(settings)) {
+            // For simplicity, we'll store null for description or handle it differently if needed.
+            // Using placeholder description for now.
+            await db.query(QUERIES.ADMIN.UPSERT_SETTING, [key, value, 'App Setting']);
+        }
+
+        res.status(200).json({ message: 'Settings updated successfully' });
+    } catch (error) {
+        console.error('Error updating settings:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};

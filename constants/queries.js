@@ -36,6 +36,12 @@ module.exports = {
     `,
         UPDATE_WITHDRAWAL_STATUS: 'UPDATE withdrawals SET status = ? WHERE id = ?',
         GET_WITHDRAWAL_BY_ID: 'SELECT user_id, amount FROM withdrawals WHERE id = ?',
+        GET_ALL_SETTINGS: 'SELECT * FROM app_settings',
+        UPSERT_SETTING: `
+            INSERT INTO app_settings (setting_key, setting_value, description) 
+            VALUES (?, ?, ?) 
+            ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), description = VALUES(description)
+        `,
     },
     WALLET: {
         GET_TRANSACTIONS: 'SELECT * FROM transactions WHERE user_id = ? ORDER BY created_at DESC',

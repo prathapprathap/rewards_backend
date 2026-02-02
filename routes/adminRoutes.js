@@ -12,5 +12,7 @@ router.post('/offers', adminController.createOffer);
 router.get('/withdrawals', adminController.getWithdrawals);
 router.put('/withdrawals/:id', adminController.updateWithdrawalStatus);
 router.get('/stats', adminController.getDashboardStats);
+router.get('/settings', adminController.getAppSettings);
+router.put('/settings', adminController.updateAppSettings);
 
 module.exports = router;
