@@ -226,17 +226,23 @@ exports.getAllPromoCodes = async (req, res) => {
 
 // Create a promocode
 exports.createPromoCode = async (req, res) => {
-    const { code, amount, users_limit, for_whom, status } = req.body;
+    let { code, amount, users_limit, for_whom, status } = req.body;
 
     try {
+        // Ensure numeric types are handled correctly
+        const parsedAmount = parseFloat(amount);
+        const parsedLimit = parseInt(users_limit, 10);
+
         await db.query(
             QUERIES.ADMIN.CREATE_PROMOCODE,
-            [code, amount, users_limit, for_whom, status]
+            [code, parsedAmount, parsedLimit, for_whom, status]
         );
         res.status(201).json({ message: 'Promo code created successfully' });
     } catch (error) {
         console.error('Error creating promocode:', error);
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({
+            message: 'Server error: ' + (error.sqlMessage || error.message || 'Unknown error occurred')
+        });
     }
 };
 
