@@ -22,6 +22,17 @@ app.use('/api/users', userRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/wallet', walletRoutes);
 
+// Database Keep-Alive Route
+app.get('/api/db-keep-alive', async (req, res) => {
+    try {
+        await db.query('SELECT 1');
+        res.status(200).send('Database is awake');
+    } catch (error) {
+        console.error('Keep-alive failed:', error);
+        res.status(500).send('Database connection error');
+    }
+});
+
 app.get('/', (req, res) => {
     res.send('HotReward Backend is running');
 });
