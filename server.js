@@ -6,7 +6,6 @@ const db = require('./config/db');
 const userRoutes = require('./routes/userRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const walletRoutes = require('./routes/walletRoutes');
-const databaseRoutes = require('./routes/databaseRoutes');
 
 const http = require('http');
 
@@ -22,7 +21,6 @@ app.use(bodyParser.json());
 app.use('/api/users', userRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/wallet', walletRoutes);
-app.use('/api/database', databaseRoutes);
 
 // Database Keep-Alive Route
 app.get('/api/db-keep-alive', async (req, res) => {
