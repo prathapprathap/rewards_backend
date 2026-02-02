@@ -135,11 +135,30 @@ const initDB = async () => {
       await promisePool.query(`ALTER TABLE users ADD COLUMN referral_code VARCHAR(10) UNIQUE`);
       await promisePool.query(`ALTER TABLE users ADD COLUMN referred_by VARCHAR(10)`);
       await promisePool.query(`ALTER TABLE users ADD COLUMN total_earnings DECIMAL(10, 2) DEFAULT 0.00`);
+      await promisePool.query(`ALTER TABLE users ADD COLUMN referral_earnings DECIMAL(10, 2) DEFAULT 0.00`);
       await promisePool.query(`ALTER TABLE users ADD COLUMN last_checkin_date DATE`);
       console.log('Users table updated with referral and checkin columns.');
     } catch (e) {
       // Ignore if columns already exist
     }
+
+    // Create Referrals Tracking Table
+    const createReferralsTable = `
+      CREATE TABLE IF NOT EXISTS referrals (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        referrer_id INT NOT NULL,
+        referred_user_id INT NOT NULL,
+        status ENUM('PENDING', 'COMPLETED') DEFAULT 'PENDING',
+        commission_earned DECIMAL(10, 2) DEFAULT 0.00,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        completed_at TIMESTAMP NULL,
+        FOREIGN KEY (referrer_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (referred_user_id) REFERENCES users(id) ON DELETE CASCADE,
+        UNIQUE KEY unique_referral (referrer_id, referred_user_id)
+      )
+    `;
+    await promisePool.query(createReferralsTable);
+    console.log('Referrals table checked/created successfully.');
 
     const createTransactionsTable = `
       CREATE TABLE IF NOT EXISTS transactions (
@@ -201,6 +220,7 @@ const initDB = async () => {
       ['new_user_spin_bonus', '2', 'Number of free spins for new users'],
       ['new_user_coin_bonus', '0', 'Bonus coins for new users'],
       ['referral_reward', '10', 'Coins earned when someone uses your referral code'],
+      ['referral_commission_percent', '10', 'Commission percentage earned when referred users complete tasks'],
       ['min_withdrawal', '100', 'Minimum amount for withdrawal'],
       ['spin_reward_values', '1,2,5,10,25,50,100', 'Possible spin wheel reward values (comma-separated)'],
     ];

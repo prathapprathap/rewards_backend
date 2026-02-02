@@ -1,33 +1,36 @@
 const db = require('../config/db');
 const QUERIES = require('../constants/queries');
+const { processReferralCommission } = require('./referralController');
 
 exports.loginWithGoogle = async (req, res) => {
-    const { google_id, email, name, profile_pic, device_id } = req.body;
+    const { google_id, email, name, profile_pic, device_id, referral_code } = req.body;
 
     if (!google_id || !email) {
         return res.status(400).json({ message: 'Google ID and Email are required' });
     }
 
     try {
-        // Check if device is already registered with another account
-        // if (device_id) {
-        //     const [deviceUsers] = await db.query(QUERIES.USER.CHECK_DEVICE_USAGE, [device_id, google_id]);
-        //     if (deviceUsers.length > 0) {
-        //         return res.status(403).json({ message: 'This device is already registered with another account. Multiple accounts are not allowed.' });
-        //     }
-        // }
-
         // Check if user exists
         const [rows] = await db.query(QUERIES.USER.CHECK_EXISTING_BY_GOOGLE_ID, [google_id]);
 
         if (rows.length > 0) {
             // User exists, return user data
-            // Optionally update device_id if it changed or if we want to track the latest device
-            if (device_id && rows[0].device_id !== device_id) {
-                await db.query(QUERIES.USER.UPDATE_DEVICE_ID, [device_id, rows[0].id]);
-                rows[0].device_id = device_id;
+            const user = rows[0];
+
+            // Generate referral code if not exists
+            if (!user.referral_code) {
+                const newReferralCode = generateReferralCode();
+                await db.query(QUERIES.USER.GENERATE_REFERRAL_CODE, [newReferralCode, user.id]);
+                user.referral_code = newReferralCode;
             }
-            return res.status(200).json({ message: 'Login successful', user: rows[0] });
+
+            // Update device_id if changed
+            if (device_id && user.device_id !== device_id) {
+                await db.query(QUERIES.USER.UPDATE_DEVICE_ID, [device_id, user.id]);
+                user.device_id = device_id;
+            }
+
+            return res.status(200).json({ message: 'Login successful', user });
         } else {
             // User does not exist, create new user
             const [result] = await db.query(
@@ -36,6 +39,23 @@ exports.loginWithGoogle = async (req, res) => {
             );
 
             const userId = result.insertId;
+
+            // Generate unique referral code for new user
+            const newReferralCode = generateReferralCode();
+            await db.query(QUERIES.USER.GENERATE_REFERRAL_CODE, [newReferralCode, userId]);
+
+            // Process referral if code provided
+            let referrerId = null;
+            if (referral_code) {
+                const [referrerRows] = await db.query(QUERIES.USER.GET_USER_BY_REFERRAL_CODE, [referral_code]);
+                if (referrerRows.length > 0) {
+                    referrerId = referrerRows[0].id;
+                    // Set referred_by on new user
+                    await db.query(QUERIES.USER.SET_REFERRED_BY, [referral_code, userId]);
+                    // Create referral record (PENDING status)
+                    await db.query(QUERIES.USER.CREATE_REFERRAL, [referrerId, userId]);
+                }
+            }
 
             // Get new user bonus from settings
             const [bonusSettings] = await db.query(
@@ -59,7 +79,9 @@ exports.loginWithGoogle = async (req, res) => {
                 profile_pic,
                 device_id,
                 wallet_balance: 0.00,
-                total_earnings: 0.00
+                total_earnings: 0.00,
+                referral_code: newReferralCode,
+                referred_by: referral_code || null
             };
 
             return res.status(201).json({
@@ -73,6 +95,16 @@ exports.loginWithGoogle = async (req, res) => {
         return res.status(500).json({ message: 'Server error' });
     }
 };
+
+// Helper function to generate unique referral code
+function generateReferralCode() {
+    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let code = '';
+    for (let i = 0; i < 8; i++) {
+        code += characters.charAt(Math.floor(Math.random() * characters.length));
+    }
+    return code;
+}
 
 exports.getUserProfile = async (req, res) => {
     const { id } = req.params;
@@ -148,6 +180,11 @@ exports.scratchOffer = async (req, res) => {
 
         // Get the offer details
         const [offer] = await db.query('SELECT * FROM offers WHERE id = ?', [offer_id]);
+
+        // Process referral commission if offer has amount
+        if (offer[0]?.amount && parseFloat(offer[0].amount) > 0) {
+            await processReferralCommission(userId, parseFloat(offer[0].amount));
+        }
 
         return res.status(200).json({
             message: 'Offer scratched successfully',
