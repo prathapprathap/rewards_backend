@@ -54,6 +54,8 @@ module.exports = {
         CREATE_PROMOCODE: 'INSERT INTO promocodes (code, amount, users_limit, for_whom, status) VALUES (?, ?, ?, ?, ?)',
         DELETE_PROMOCODE: 'DELETE FROM promocodes WHERE id = ?',
         DELETE_OFFER: 'DELETE FROM offers WHERE id = ?',
+        DELETE_USER: 'DELETE FROM users WHERE id = ?',
+        UPDATE_ADMIN_PASSWORD: 'UPDATE admin_info SET password = ? WHERE id = 1',
     },
     WALLET: {
         GET_TRANSACTIONS: 'SELECT * FROM transactions WHERE user_id = ? ORDER BY created_at DESC',

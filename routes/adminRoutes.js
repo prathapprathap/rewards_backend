@@ -19,5 +19,7 @@ router.put('/settings', adminController.updateAppSettings);
 router.get('/promocodes', adminController.getAllPromoCodes);
 router.post('/promocodes', adminController.createPromoCode);
 router.delete('/promocodes/:id', adminController.deletePromoCode);
+router.delete('/users/:id', adminController.deleteUser);
+router.put('/profile/password', adminController.updatePassword);
 
 module.exports = router;

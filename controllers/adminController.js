@@ -271,3 +271,38 @@ exports.deletePromoCode = async (req, res) => {
         res.status(500).json({ message: 'Server error' });
     }
 };
+
+// Delete user
+exports.deleteUser = async (req, res) => {
+    const { id } = req.params;
+    try {
+        await db.query(QUERIES.ADMIN.DELETE_USER, [id]);
+        res.status(200).json({ message: 'User deleted successfully' });
+    } catch (error) {
+        console.error('Error deleting user:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// Update Password
+exports.updatePassword = async (req, res) => {
+    const { currentPassword, newPassword } = req.body;
+    const bcrypt = require('bcryptjs');
+
+    try {
+        const [rows] = await db.query(QUERIES.ADMIN.LOGIN, ['admin']);
+        if (rows.length === 0) return res.status(404).json({ message: 'Admin not found' });
+
+        const admin = rows[0];
+        const isMatch = await bcrypt.compare(currentPassword, admin.password);
+        if (!isMatch) return res.status(401).json({ message: 'Incorrect current password' });
+
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        await db.query(QUERIES.ADMIN.UPDATE_ADMIN_PASSWORD, [hashedPassword]);
+
+        res.status(200).json({ message: 'Password updated successfully' });
+    } catch (error) {
+        console.error('Error updating password:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
