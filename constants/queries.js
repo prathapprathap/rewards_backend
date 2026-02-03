@@ -55,6 +55,10 @@ module.exports = {
         DELETE_PROMOCODE: 'DELETE FROM promocodes WHERE id = ?',
         DELETE_OFFER: 'DELETE FROM offers WHERE id = ?',
         DELETE_USER: 'DELETE FROM users WHERE id = ?',
+        UPDATE_OFFER: `UPDATE offers SET 
+            offer_name = ?, offer_id = ?, heading = ?, history_name = ?, offer_url = ?, 
+            amount = ?, event_name = ?, description = ?, image_url = ?, refer_payout = ?, status = ? 
+            WHERE id = ?`,
         UPDATE_ADMIN_PASSWORD: 'UPDATE admin_info SET password = ? WHERE id = 1',
     },
     WALLET: {

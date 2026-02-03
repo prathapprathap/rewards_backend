@@ -106,6 +106,33 @@ exports.deleteOffer = async (req, res) => {
     }
 };
 
+// Update an offer
+exports.updateOffer = async (req, res) => {
+    const { id } = req.params;
+    const {
+        offer_name, offer_id, heading, history_name, offer_url,
+        amount, event_name, description, image_url, refer_payout, status
+    } = req.body;
+
+    try {
+        await db.query(
+            QUERIES.ADMIN.UPDATE_OFFER,
+            [
+                offer_name, offer_id, heading, history_name, offer_url,
+                amount, event_name, description, image_url, refer_payout, status, id
+            ]
+        );
+
+        res.status(200).json({
+            message: 'Offer updated successfully',
+            offer: { id, ...req.body }
+        });
+    } catch (error) {
+        console.error('Error updating offer:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
 // Dashboard Stats
 exports.getDashboardStats = async (req, res) => {
     try {
