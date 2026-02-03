@@ -299,6 +299,37 @@ exports.deletePromoCode = async (req, res) => {
     }
 };
 
+// Update a promocode
+exports.updatePromoCode = async (req, res) => {
+    const { id } = req.params;
+    const { code, amount, users_limit, for_whom, status } = req.body;
+
+    try {
+        await db.query(
+            QUERIES.ADMIN.UPDATE_PROMOCODE,
+            [code, amount, users_limit, for_whom, status, id]
+        );
+        res.status(200).json({ message: 'Promo code updated successfully' });
+    } catch (error) {
+        console.error('Error updating promocode:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// Update user balance
+exports.updateUserBalance = async (req, res) => {
+    const { id } = req.params;
+    const { wallet_balance } = req.body;
+
+    try {
+        await db.query(QUERIES.ADMIN.UPDATE_USER_BALANCE, [wallet_balance, id]);
+        res.status(200).json({ message: 'User balance updated successfully' });
+    } catch (error) {
+        console.error('Error updating user balance:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
 // Delete user
 exports.deleteUser = async (req, res) => {
     const { id } = req.params;

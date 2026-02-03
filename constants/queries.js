@@ -59,6 +59,8 @@ module.exports = {
             offer_name = ?, offer_id = ?, heading = ?, history_name = ?, offer_url = ?, 
             amount = ?, event_name = ?, description = ?, image_url = ?, refer_payout = ?, status = ? 
             WHERE id = ?`,
+        UPDATE_PROMOCODE: 'UPDATE promocodes SET code = ?, amount = ?, users_limit = ?, for_whom = ?, status = ? WHERE id = ?',
+        UPDATE_USER_BALANCE: 'UPDATE users SET wallet_balance = ? WHERE id = ?',
         UPDATE_ADMIN_PASSWORD: 'UPDATE admin_info SET password = ? WHERE id = 1',
     },
     WALLET: {
