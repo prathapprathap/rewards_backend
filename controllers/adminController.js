@@ -129,7 +129,9 @@ exports.updateOffer = async (req, res) => {
         });
     } catch (error) {
         console.error('Error updating offer:', error);
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({
+            message: 'Server error: ' + (error.sqlMessage || error.message || 'Unknown error occurred')
+        });
     }
 };
 
@@ -305,28 +307,44 @@ exports.updatePromoCode = async (req, res) => {
     const { code, amount, users_limit, for_whom, status } = req.body;
 
     try {
+        // Ensure numeric types are handled correctly
+        const parsedAmount = parseFloat(amount);
+        const parsedLimit = parseInt(users_limit, 10);
+
+        if (isNaN(parsedAmount) || isNaN(parsedLimit)) {
+            return res.status(400).json({ message: 'Invalid amount or limit value' });
+        }
+
         await db.query(
             QUERIES.ADMIN.UPDATE_PROMOCODE,
-            [code, amount, users_limit, for_whom, status, id]
+            [code, parsedAmount, parsedLimit, for_whom, status, id]
         );
         res.status(200).json({ message: 'Promo code updated successfully' });
     } catch (error) {
         console.error('Error updating promocode:', error);
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({
+            message: 'Server error: ' + (error.sqlMessage || error.message || 'Unknown error occurred')
+        });
     }
 };
 
 // Update user balance
 exports.updateUserBalance = async (req, res) => {
     const { id } = req.params;
-    const { wallet_balance } = req.body;
+    let { wallet_balance } = req.body;
 
     try {
-        await db.query(QUERIES.ADMIN.UPDATE_USER_BALANCE, [wallet_balance, id]);
+        // Ensure balance is a valid number
+        const balanceNum = parseFloat(wallet_balance);
+        if (isNaN(balanceNum)) {
+            return res.status(400).json({ message: 'Invalid balance value' });
+        }
+
+        await db.query(QUERIES.ADMIN.UPDATE_USER_BALANCE, [balanceNum, id]);
         res.status(200).json({ message: 'User balance updated successfully' });
     } catch (error) {
         console.error('Error updating user balance:', error);
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ message: 'Server error', error: error.message });
     }
 };
 
