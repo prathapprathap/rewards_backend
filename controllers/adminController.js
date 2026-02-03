@@ -93,6 +93,19 @@ exports.getAllOffers = async (req, res) => {
     }
 };
 
+// Delete an offer
+exports.deleteOffer = async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        await db.query(QUERIES.ADMIN.DELETE_OFFER, [id]);
+        res.status(200).json({ message: 'Offer deleted successfully' });
+    } catch (error) {
+        console.error('Error deleting offer:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
 // Dashboard Stats
 exports.getDashboardStats = async (req, res) => {
     try {

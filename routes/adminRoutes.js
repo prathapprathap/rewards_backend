@@ -9,6 +9,7 @@ router.post('/tasks', adminController.createTask);
 router.delete('/tasks/:id', adminController.deleteTask);
 router.get('/offers', adminController.getAllOffers);
 router.post('/offers', adminController.createOffer);
+router.delete('/offers/:id', adminController.deleteOffer);
 router.get('/withdrawals', adminController.getWithdrawals);
 router.put('/withdrawals/:id', adminController.updateWithdrawalStatus);
 router.get('/stats', adminController.getDashboardStats);
