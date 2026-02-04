@@ -179,16 +179,31 @@ exports.scratchOffer = async (req, res) => {
         );
 
         // Get the offer details
-        const [offer] = await db.query('SELECT * FROM offers WHERE id = ?', [offer_id]);
+        const [offerRows] = await db.query('SELECT * FROM offers WHERE id = ?', [offer_id]);
+        const offer = offerRows[0];
 
-        // Process referral commission if offer has amount
-        if (offer[0]?.amount && parseFloat(offer[0].amount) > 0) {
-            await processReferralCommission(userId, parseFloat(offer[0].amount));
+        if (offer && offer.amount && parseFloat(offer.amount) > 0) {
+            const amount = parseFloat(offer.amount);
+
+            // Credit user wallet
+            await db.query(
+                QUERIES.USER.UPDATE_BALANCE_AND_EARNINGS,
+                [amount, amount, userId]
+            );
+
+            // Record transaction
+            await db.query(
+                QUERIES.WALLET.CREATE_TRANSACTION,
+                [userId, 'CREDIT', amount, `Scratch card: ${offer.offer_name}`]
+            );
+
+            // Process referral commission
+            await processReferralCommission(userId, amount);
         }
 
         return res.status(200).json({
             message: 'Offer scratched successfully',
-            offer: offer[0],
+            offer: offer,
             already_scratched: false
         });
     } catch (error) {
