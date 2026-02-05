@@ -19,12 +19,23 @@ async function trackClick(req, res) {
 
         // Check if offer exists and is active
         const [offers] = await db.query(
-            'SELECT * FROM offers WHERE id = ? AND status = ?',
+            'SELECT * FROM offers WHERE id = ? AND LOWER(status) = ?',
             [offerId, 'active']
         );
 
+        console.log(`Checking offer ${offerId} - Found ${offers.length} active offers`);
+
         if (offers.length === 0) {
-            return res.status(404).json({ error: 'Offer not found or inactive' });
+            // Check if offer exists at all
+            const [allOffers] = await db.query('SELECT id, status FROM offers WHERE id = ?', [offerId]);
+            if (allOffers.length === 0) {
+                return res.status(404).json({ error: 'Offer not found' });
+            } else {
+                return res.status(404).json({
+                    error: 'Offer is not active',
+                    offerStatus: allOffers[0].status
+                });
+            }
         }
 
         const offer = offers[0];

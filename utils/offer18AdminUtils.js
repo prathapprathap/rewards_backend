@@ -1,7 +1,8 @@
 // Offer18 Admin Utilities
 // Helper functions for managing Offer18 integration
 
-const db = require('../db/connection');
+const db = require('../config/db');
+
 
 /**
  * Get all postback logs with filters
