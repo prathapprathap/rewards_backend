@@ -17,6 +17,14 @@ exports.loginWithGoogle = async (req, res) => {
             // User exists, return user data
             const user = rows[0];
 
+            // ✅ CHECK: Prevent login if device is registered to another user
+            if (device_id && user.device_id && user.device_id !== device_id) {
+                return res.status(403).json({
+                    message: 'This account is registered on another device. Please use the original device.',
+                    error_code: 'DEVICE_MISMATCH'
+                });
+            }
+
             // Generate referral code if not exists
             if (!user.referral_code) {
                 const newReferralCode = generateReferralCode();
@@ -32,6 +40,22 @@ exports.loginWithGoogle = async (req, res) => {
 
             return res.status(200).json({ message: 'Login successful', user });
         } else {
+            // ✅ CHECK: Prevent new signup if device already has an account
+            if (device_id) {
+                const [deviceCheck] = await db.query(
+                    'SELECT id, email FROM users WHERE device_id = ?',
+                    [device_id]
+                );
+
+                if (deviceCheck.length > 0) {
+                    return res.status(403).json({
+                        message: `This device is already registered with ${deviceCheck[0].email}. One account per device only.`,
+                        error_code: 'DEVICE_ALREADY_REGISTERED',
+                        existing_email: deviceCheck[0].email
+                    });
+                }
+            }
+
             // User does not exist, create new user
             const [result] = await db.query(
                 QUERIES.USER.CREATE_USER,
@@ -182,27 +206,13 @@ exports.scratchOffer = async (req, res) => {
         const [offerRows] = await db.query('SELECT * FROM offers WHERE id = ?', [offer_id]);
         const offer = offerRows[0];
 
-        if (offer && offer.amount && parseFloat(offer.amount) > 0) {
-            const amount = parseFloat(offer.amount);
-
-            // Credit user wallet
-            await db.query(
-                QUERIES.USER.UPDATE_BALANCE_AND_EARNINGS,
-                [amount, amount, userId]
-            );
-
-            // Record transaction
-            await db.query(
-                QUERIES.WALLET.CREATE_TRANSACTION,
-                [userId, 'CREDIT', amount, `Scratch card: ${offer.offer_name}`]
-            );
-
-            // Process referral commission
-            await processReferralCommission(userId, amount);
-        }
+        // ❌ DO NOT CREDIT WALLET HERE!
+        // Wallet should ONLY be credited when user completes the offer task
+        // and Offer18 sends a postback to /api/offer18/postback
+        // The scratch card only REVEALS the offer, it doesn't give money
 
         return res.status(200).json({
-            message: 'Offer scratched successfully',
+            message: 'Offer revealed successfully. Complete the task to earn rewards!',
             offer: offer,
             already_scratched: false
         });
