@@ -105,7 +105,9 @@ async function trackDeviceFingerprint(userId, deviceId, ipAddress, userAgent) {
     }
 }
 
-// Handle postback from Offer18
+// Handle postback from Offer18 / any 3rd-party provider
+// Supports multi-event offers: the incoming `event` param is matched against
+// offer_event_steps to determine the per-step reward.
 async function handlePostback(req, res) {
     try {
         const { clickid, payout, status, event, offerid } = req.query;
@@ -138,11 +140,12 @@ async function handlePostback(req, res) {
         }
 
         const click = clicks[0];
+        const eventName = event || 'default';
 
-        // Check for duplicate postback
+        // Check for duplicate postback (same click + same event)
         const [existingEvents] = await db.query(
             'SELECT * FROM offer_events WHERE click_id = ? AND event_name = ?',
-            [clickid, event || 'default']
+            [clickid, eventName]
         );
 
         if (existingEvents.length > 0) {
@@ -158,22 +161,47 @@ async function handlePostback(req, res) {
         }
 
         const offer = offers[0];
-        const finalPayout = parseFloat(payout) || parseFloat(offer.amount) || 0;
-        const currencyType = offer.currency_type || 'cash';
+
+        // ── Look up matching event step (multi-event support) ────────────
+        let stepPayout = parseFloat(payout) || 0;
+        let stepCurrency = offer.currency_type || 'cash';
+        let eventStepId = null;
+
+        const [steps] = await db.query(
+            `SELECT * FROM offer_event_steps
+             WHERE offer_id = ? AND (event_name = ? OR event_id = ?)
+             LIMIT 1`,
+            [click.offer_id, eventName, eventName]
+        );
+
+        if (steps.length > 0) {
+            // Use the per-step reward from the database
+            const step = steps[0];
+            stepPayout = stepPayout || parseFloat(step.points) || 0;
+            stepCurrency = step.currency_type || stepCurrency;
+            eventStepId = step.id;
+            console.log(`   ↳ Matched event step: "${step.event_name}" → ${stepCurrency} ${stepPayout}`);
+        } else {
+            // Fallback: use the payout from the postback or the offer-level amount
+            stepPayout = stepPayout || parseFloat(offer.amount) || 0;
+            console.log(`   ↳ No matching step; using fallback payout: ${stepCurrency} ${stepPayout}`);
+        }
+
         const eventStatus = status === 'approved' || status === 'completed' ? 'approved' : 'pending';
 
         // Record the event
         const [eventResult] = await db.query(
             `INSERT INTO offer_events 
-            (click_id, offer_id, user_id, event_name, payout, currency_type, status, postback_data, ip_address) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            (click_id, event_step_id, offer_id, user_id, event_name, payout, currency_type, status, postback_data, ip_address) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 clickid,
+                eventStepId,
                 click.offer_id,
                 click.user_id,
-                event || 'default',
-                finalPayout,
-                currencyType,
+                eventName,
+                stepPayout,
+                stepCurrency,
                 eventStatus,
                 JSON.stringify(req.query),
                 ipAddress
@@ -184,16 +212,32 @@ async function handlePostback(req, res) {
 
         // If approved, credit the user's wallet
         if (eventStatus === 'approved') {
-            await creditUserWallet(click.user_id, finalPayout, currencyType, click.offer_id, eventId);
+            await creditUserWallet(click.user_id, stepPayout, stepCurrency, click.offer_id, eventId);
 
-            // Update click status
+            // Check if ALL event steps for this offer are now completed
+            const [totalSteps] = await db.query(
+                'SELECT COUNT(*) as cnt FROM offer_event_steps WHERE offer_id = ?',
+                [click.offer_id]
+            );
+            const [completedSteps] = await db.query(
+                `SELECT COUNT(DISTINCT oe.event_name) as cnt
+                 FROM offer_events oe
+                 INNER JOIN offer_event_steps oes
+                   ON oes.offer_id = oe.offer_id AND oes.event_name = oe.event_name
+                 WHERE oe.click_id = ? AND oe.status = 'approved'`,
+                [clickid]
+            );
+
+            const allDone = totalSteps[0].cnt === 0 || completedSteps[0].cnt >= totalSteps[0].cnt;
+
             await db.query(
                 'UPDATE offer_clicks SET status = ?, completed_at = CURRENT_TIMESTAMP WHERE click_id = ?',
-                ['completed', clickid]
+                [allDone ? 'completed' : 'pending', clickid]
             );
         }
 
-        console.log('✅ Postback processed successfully for user:', click.user_id);
+        console.log('✅ Postback processed successfully for user:', click.user_id,
+            `(event: ${eventName}, payout: ${stepCurrency} ${stepPayout})`);
         res.status(200).send('OK');
 
     } catch (error) {

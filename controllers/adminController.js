@@ -56,29 +56,67 @@ exports.deleteTask = async (req, res) => {
     }
 };
 
-// Create an offer
+// Create an offer (with optional multi-event steps)
 exports.createOffer = async (req, res) => {
-    const {
-        offer_name, offer_id, heading, history_name, offer_url,
-        amount, event_name, description, image_url, refer_payout, status
-    } = req.body;
-
+    const connection = await db.getConnection();
     try {
-        const [result] = await db.query(
-            QUERIES.ADMIN.CREATE_OFFER,
-            [
-                offer_name, offer_id, heading, history_name, offer_url,
-                amount, event_name, description, image_url, refer_payout, status
-            ]
+        await connection.beginTransaction();
+
+        const {
+            offer_name, offer_id, heading, history_name = '',
+            offer_url, tracking_link = '', amount,
+            currency_type = 'cash', event_name = '',
+            description = '', image_url = '',
+            refer_payout = '1st Event', status = 'Active',
+            events = []  // array of { event_id, event_name, points, currency_type }
+        } = req.body;
+
+        const [result] = await connection.query(
+            `INSERT INTO offers
+             (offer_name, offer_id, heading, history_name, offer_url,
+              tracking_link, amount, currency_type, event_name,
+              description, image_url, refer_payout, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [offer_name, offer_id, heading, history_name, offer_url,
+                tracking_link, amount, currency_type, event_name,
+                description, image_url, refer_payout, status]
         );
 
+        const newOfferId = result.insertId;
+
+        // Insert event steps if provided
+        if (Array.isArray(events) && events.length > 0) {
+            for (let i = 0; i < events.length; i++) {
+                const ev = events[i];
+                await connection.query(
+                    `INSERT INTO offer_event_steps
+                     (offer_id, event_id, event_name, points, currency_type, step_order)
+                     VALUES (?, ?, ?, ?, ?, ?)`,
+                    [newOfferId, ev.event_id || `evt${i}`, ev.event_name,
+                        ev.points || 0, ev.currency_type || currency_type, i]
+                );
+            }
+        } else if (event_name) {
+            // Backward-compat: single event_name → one step
+            await connection.query(
+                `INSERT INTO offer_event_steps
+                 (offer_id, event_id, event_name, points, currency_type, step_order)
+                 VALUES (?, ?, ?, ?, ?, ?)`,
+                [newOfferId, 'evt0', event_name, amount, currency_type, 0]
+            );
+        }
+
+        await connection.commit();
         res.status(201).json({
             message: 'Offer created successfully',
-            offer: { id: result.insertId, ...req.body }
+            offer: { id: newOfferId, ...req.body }
         });
     } catch (error) {
+        await connection.rollback();
         console.error('Error creating offer:', error);
         res.status(500).json({ message: 'Server error' });
+    } finally {
+        connection.release();
     }
 };
 
@@ -106,32 +144,65 @@ exports.deleteOffer = async (req, res) => {
     }
 };
 
-// Update an offer
+// Update an offer (with optional multi-event steps)
 exports.updateOffer = async (req, res) => {
-    const { id } = req.params;
-    const {
-        offer_name, offer_id, heading, history_name, offer_url,
-        amount, event_name, description, image_url, refer_payout, status
-    } = req.body;
-
+    const connection = await db.getConnection();
     try {
-        await db.query(
-            QUERIES.ADMIN.UPDATE_OFFER,
-            [
-                offer_name, offer_id, heading, history_name, offer_url,
-                amount, event_name, description, image_url, refer_payout, status, id
-            ]
+        await connection.beginTransaction();
+
+        const { id } = req.params;
+        const {
+            offer_name, offer_id, heading, history_name = '',
+            offer_url, tracking_link = '', amount,
+            currency_type = 'cash', event_name = '',
+            description = '', image_url = '',
+            refer_payout = '1st Event', status = 'Active',
+            events = []
+        } = req.body;
+
+        await connection.query(
+            `UPDATE offers SET
+             offer_name = ?, offer_id = ?, heading = ?, history_name = ?,
+             offer_url = ?, tracking_link = ?, amount = ?,
+             currency_type = ?, event_name = ?, description = ?,
+             image_url = ?, refer_payout = ?, status = ?
+             WHERE id = ?`,
+            [offer_name, offer_id, heading, history_name,
+                offer_url, tracking_link, amount,
+                currency_type, event_name, description,
+                image_url, refer_payout, status, id]
         );
 
+        // Replace event steps if provided
+        if (Array.isArray(events) && events.length > 0) {
+            await connection.query(
+                'DELETE FROM offer_event_steps WHERE offer_id = ?', [id]
+            );
+            for (let i = 0; i < events.length; i++) {
+                const ev = events[i];
+                await connection.query(
+                    `INSERT INTO offer_event_steps
+                     (offer_id, event_id, event_name, points, currency_type, step_order)
+                     VALUES (?, ?, ?, ?, ?, ?)`,
+                    [id, ev.event_id || `evt${i}`, ev.event_name,
+                        ev.points || 0, ev.currency_type || currency_type, i]
+                );
+            }
+        }
+
+        await connection.commit();
         res.status(200).json({
             message: 'Offer updated successfully',
             offer: { id, ...req.body }
         });
     } catch (error) {
+        await connection.rollback();
         console.error('Error updating offer:', error);
         res.status(500).json({
             message: 'Server error: ' + (error.sqlMessage || error.message || 'Unknown error occurred')
         });
+    } finally {
+        connection.release();
     }
 };
 
