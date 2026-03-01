@@ -17,14 +17,6 @@ exports.loginWithGoogle = async (req, res) => {
             // User exists, return user data
             const user = rows[0];
 
-            // ✅ CHECK: Prevent login if device is registered to another user
-            if (device_id && user.device_id && user.device_id !== device_id) {
-                return res.status(403).json({
-                    message: 'This account is registered on another device. Please use the original device.',
-                    error_code: 'DEVICE_MISMATCH'
-                });
-            }
-
             // Generate referral code if not exists
             if (!user.referral_code) {
                 const newReferralCode = generateReferralCode();
@@ -32,10 +24,20 @@ exports.loginWithGoogle = async (req, res) => {
                 user.referral_code = newReferralCode;
             }
 
-            // Update device_id if changed
-            if (device_id && user.device_id !== device_id) {
-                await db.query(QUERIES.USER.UPDATE_DEVICE_ID, [device_id, user.id]);
-                user.device_id = device_id;
+            // Device restriction logic
+            if (device_id) {
+                if (!user.device_id) {
+                    // First time login - register this device
+                    await db.query(QUERIES.USER.UPDATE_DEVICE_ID, [device_id, user.id]);
+                    user.device_id = device_id;
+                } else if (user.device_id !== device_id) {
+                    // Different device - BLOCK
+                    return res.status(403).json({
+                        message: 'This account is already registered on another device.',
+                        error_code: 'DEVICE_LOCKED'
+                    });
+                }
+                // else: same device - allow login
             }
 
             return res.status(200).json({ message: 'Login successful', user });
