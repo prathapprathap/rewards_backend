@@ -276,6 +276,114 @@ const initDB = async () => {
     await promisePool.query(createUserSpinsTable);
     console.log('User spins table checked/created successfully.');
 
+    // --- Offer18 Tracking Tables ---
+
+    const createOfferClicksTable = `
+      CREATE TABLE IF NOT EXISTS offer_clicks (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        click_id VARCHAR(64) UNIQUE NOT NULL,
+        user_id INT NOT NULL,
+        offer_id INT NOT NULL,
+        device_id VARCHAR(255),
+        ip_address VARCHAR(45),
+        user_agent TEXT,
+        status VARCHAR(50) DEFAULT 'clicked',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        completed_at TIMESTAMP NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (offer_id) REFERENCES offers(id) ON DELETE CASCADE
+      )
+    `;
+    await promisePool.query(createOfferClicksTable);
+
+    const createOfferEventStepsTable = `
+      CREATE TABLE IF NOT EXISTS offer_event_steps (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        offer_id INT NOT NULL,
+        event_name VARCHAR(100) NOT NULL,
+        event_id VARCHAR(100),
+        points DECIMAL(10, 2) DEFAULT 0.00,
+        currency_type ENUM('coins', 'gems', 'cash') DEFAULT 'cash',
+        is_first_step TINYINT(1) DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (offer_id) REFERENCES offers(id) ON DELETE CASCADE
+      )
+    `;
+    await promisePool.query(createOfferEventStepsTable);
+
+    const createOfferEventsTable = `
+      CREATE TABLE IF NOT EXISTS offer_events (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        click_id VARCHAR(64) NOT NULL,
+        event_step_id INT,
+        offer_id INT NOT NULL,
+        user_id INT NOT NULL,
+        event_name VARCHAR(100),
+        event_value DECIMAL(10, 2) DEFAULT 0.00,
+        payout DECIMAL(10, 2) NOT NULL,
+        currency_type ENUM('coins', 'gems', 'cash') DEFAULT 'cash',
+        status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending',
+        postback_data JSON,
+        ip_address VARCHAR(45),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        processed_at TIMESTAMP NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (offer_id) REFERENCES offers(id) ON DELETE CASCADE
+      )
+    `;
+    await promisePool.query(createOfferEventsTable);
+
+    // Ensure event_step_id column exists for multi-event support
+    try {
+      await promisePool.query('ALTER TABLE offer_events ADD COLUMN event_step_id INT AFTER click_id');
+    } catch (e) { }
+
+    const createPostbackLogsTable = `
+      CREATE TABLE IF NOT EXISTS postback_logs (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        click_id VARCHAR(64),
+        offer_id INT,
+        raw_data JSON,
+        ip_address VARCHAR(45),
+        status ENUM('success', 'failed') DEFAULT 'success',
+        error_message TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `;
+    await promisePool.query(createPostbackLogsTable);
+
+    const createWalletBreakdownTable = `
+      CREATE TABLE IF NOT EXISTS user_wallet_breakdown (
+        user_id INT PRIMARY KEY,
+        coins DECIMAL(10, 2) DEFAULT 0.00,
+        gems DECIMAL(10, 2) DEFAULT 0.00,
+        cash DECIMAL(10, 2) DEFAULT 0.00,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `;
+    await promisePool.query(createWalletBreakdownTable);
+
+    const createWalletTransactionsTable = `
+      CREATE TABLE IF NOT EXISTS wallet_transactions (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        transaction_type VARCHAR(100) NOT NULL,
+        currency_type ENUM('coins', 'gems', 'cash') NOT NULL,
+        amount DECIMAL(10, 2) NOT NULL,
+        balance_before DECIMAL(10, 2) NOT NULL,
+        balance_after DECIMAL(10, 2) NOT NULL,
+        offer_id INT,
+        event_id INT,
+        description TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `;
+    await promisePool.query(createWalletTransactionsTable);
+
+    console.log('✅ Offer18 tracking tables checked/created successfully.');
+
   } catch (error) {
     console.error('Error initializing database:', error);
   }
