@@ -67,7 +67,9 @@ async function trackClick(req, res) {
         const finalUrl = trackingUrl
             .replace('{clickid}', clickId)
             .replace('{click_id}', clickId)
+            .replace('{p1}', clickId)          // Offer18 Affiliate Click ID macro
             .replace('{user_id}', userId)
+            .replace('{uid}', userId)           // alternate user ID macro
             .replace('{offer_id}', offerId);
 
         res.json({
@@ -110,21 +112,26 @@ async function trackDeviceFingerprint(userId, deviceId, ipAddress, userAgent) {
 // offer_event_steps to determine the per-step reward.
 async function handlePostback(req, res) {
     try {
-        const { clickid, payout, status, event, offerid } = req.query;
+        // Accept click ID from multiple parameter names:
+        //   - {p1}       → Offer18's "Affiliate Click ID" macro (primary)
+        //   - {clickid}  → legacy / manual postback
+        //   - {click_id} → alternative format
+        const clickid = req.query.clickid || req.query.p1 || req.query.click_id;
+        const { payout, status, event, offerid } = req.query;
         const ipAddress = req.ip || req.connection.remoteAddress;
 
-        console.log('📥 Postback received:', { clickid, payout, status, event, offerid });
+        console.log('📥 Postback received:', { clickid, payout, status, event, offerid, raw: req.query });
 
-        // Log the postback
+        // Log the postback (always, even if clickid is missing)
         await db.query(
             `INSERT INTO postback_logs (click_id, offer_id, raw_data, ip_address, status) 
             VALUES (?, ?, ?, ?, ?)`,
-            [clickid, offerid, JSON.stringify(req.query), ipAddress, 'success']
+            [clickid || null, offerid || null, JSON.stringify(req.query), ipAddress, 'received']
         );
 
         // Validate required parameters
         if (!clickid) {
-            await logPostbackError(clickid, offerid, req.query, ipAddress, 'Missing click_id');
+            await logPostbackError(null, offerid, req.query, ipAddress, 'Missing click_id (checked p1, clickid, click_id)');
             return res.status(400).send('ERROR: Missing click_id');
         }
 
