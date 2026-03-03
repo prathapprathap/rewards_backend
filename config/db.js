@@ -142,6 +142,11 @@ const initDB = async () => {
       // Ignore if columns already exist
     }
 
+    // Update Offers table to ensure cash is default and simplify enum if needed
+    try {
+      await promisePool.query("ALTER TABLE offers MODIFY COLUMN currency_type VARCHAR(20) DEFAULT 'cash'");
+    } catch (e) { }
+
     // Create Referrals Tracking Table
     const createReferralsTable = `
       CREATE TABLE IF NOT EXISTS referrals (
@@ -303,7 +308,7 @@ const initDB = async () => {
         event_name VARCHAR(100) NOT NULL,
         event_id VARCHAR(100),
         points DECIMAL(10, 2) DEFAULT 0.00,
-        currency_type ENUM('coins', 'gems', 'cash') DEFAULT 'cash',
+        currency_type VARCHAR(20) DEFAULT 'cash',
         is_first_step TINYINT(1) DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (offer_id) REFERENCES offers(id) ON DELETE CASCADE
@@ -321,7 +326,7 @@ const initDB = async () => {
         event_name VARCHAR(100),
         event_value DECIMAL(10, 2) DEFAULT 0.00,
         payout DECIMAL(10, 2) NOT NULL,
-        currency_type ENUM('coins', 'gems', 'cash') DEFAULT 'cash',
+        currency_type VARCHAR(20) DEFAULT 'cash',
         status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending',
         postback_data JSON,
         ip_address VARCHAR(45),
@@ -355,8 +360,6 @@ const initDB = async () => {
     const createWalletBreakdownTable = `
       CREATE TABLE IF NOT EXISTS user_wallet_breakdown (
         user_id INT PRIMARY KEY,
-        coins DECIMAL(10, 2) DEFAULT 0.00,
-        gems DECIMAL(10, 2) DEFAULT 0.00,
         cash DECIMAL(10, 2) DEFAULT 0.00,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -369,7 +372,7 @@ const initDB = async () => {
         id INT AUTO_INCREMENT PRIMARY KEY,
         user_id INT NOT NULL,
         transaction_type VARCHAR(100) NOT NULL,
-        currency_type ENUM('coins', 'gems', 'cash') NOT NULL,
+        currency_type VARCHAR(20) DEFAULT 'cash',
         amount DECIMAL(10, 2) NOT NULL,
         balance_before DECIMAL(10, 2) NOT NULL,
         balance_after DECIMAL(10, 2) NOT NULL,
