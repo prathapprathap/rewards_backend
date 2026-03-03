@@ -125,16 +125,17 @@ async function handlePostback(req, res) {
 
         console.log('📥 Postback received:', { clickid, payout, status, event, offerid, raw: req.query });
 
-        // Log the postback (always, even if clickid is missing)
-        await db.query(
+        // Initial log will be updated or replaced by error log
+        const [logResult] = await db.query(
             `INSERT INTO postback_logs (click_id, offer_id, raw_data, ip_address, status) 
             VALUES (?, ?, ?, ?, ?)`,
-            [clickid || null, offerid || null, JSON.stringify(req.query), ipAddress, 'success']
+            [clickid || null, offerid || null, JSON.stringify(req.query), ipAddress, 'pending']
         );
+        const logId = logResult.insertId;
 
         // Validate required parameters
         if (!clickid) {
-            await logPostbackError(null, offerid, req.query, ipAddress, 'Missing click_id (checked p1, clickid, click_id)');
+            await logPostbackError(null, offerid, req.query, ipAddress, 'Missing click_id (checked p1, clickid, click_id)', logId);
             return res.status(400).send('ERROR: Missing click_id');
         }
 
@@ -145,7 +146,7 @@ async function handlePostback(req, res) {
         );
 
         if (clicks.length === 0) {
-            await logPostbackError(clickid, offerid, req.query, ipAddress, 'Click ID not found');
+            await logPostbackError(clickid, offerid, req.query, ipAddress, 'Click ID not found', logId);
             return res.status(404).send('ERROR: Click not found');
         }
 
@@ -159,22 +160,22 @@ async function handlePostback(req, res) {
         );
 
         if (existingEvents.length > 0) {
-            await logPostbackError(clickid, offerid, req.query, ipAddress, 'Duplicate postback');
+            await logPostbackError(clickid, offerid, req.query, ipAddress, 'Duplicate postback', logId);
             return res.status(200).send('OK: Already processed');
         }
 
         // Get offer details
         const [offers] = await db.query('SELECT * FROM offers WHERE id = ?', [click.offer_id]);
         if (offers.length === 0) {
-            await logPostbackError(clickid, offerid, req.query, ipAddress, 'Offer not found');
+            await logPostbackError(clickid, offerid, req.query, ipAddress, 'Offer not found', logId);
             return res.status(404).send('ERROR: Offer not found');
         }
 
         const offer = offers[0];
 
-        // ── Look up matching event step (multi-event support) ────────────
-        let stepPayout = parseFloat(payout) || 0;
-        let stepCurrency = offer.currency_type || 'cash';
+        // Prioritize database points over postback payout for consistency
+        let stepPayout = 0;
+        let stepCurrency = 'cash';
         let eventStepId = null;
 
         const [steps] = await db.query(
@@ -185,19 +186,26 @@ async function handlePostback(req, res) {
         );
 
         if (steps.length > 0) {
-            // Use the per-step reward from the database
             const step = steps[0];
-            stepPayout = stepPayout || parseFloat(step.points) || 0;
-            stepCurrency = step.currency_type || stepCurrency;
+            stepPayout = parseFloat(step.points) || 0; // Priority: DB points
+            stepCurrency = step.currency_type || 'cash';
             eventStepId = step.id;
             console.log(`   ↳ Matched event step: "${step.event_name}" → ${stepCurrency} ${stepPayout}`);
         } else {
-            // Fallback: use the payout from the postback or the offer-level amount
-            stepPayout = stepPayout || parseFloat(offer.amount) || 0;
+            // Fallback: use offer-level amount or postback payout
+            stepPayout = parseFloat(offer.amount) || parseFloat(payout) || 0;
+            stepCurrency = offer.currency_type || 'cash';
             console.log(`   ↳ No matching step; using fallback payout: ${stepCurrency} ${stepPayout}`);
         }
 
-        const eventStatus = status === 'approved' || status === 'completed' ? 'approved' : 'pending';
+        // Handle Offer18 status: default to approved if missing or placeholder
+        const cleanStatus = (status || '').toLowerCase();
+        const isApproved = cleanStatus === 'approved' ||
+            cleanStatus === 'completed' ||
+            cleanStatus === '{status}' || // Offer18 default placeholder
+            !status;                      // Missing status = assume success if postback fired
+
+        const eventStatus = isApproved ? 'approved' : 'pending';
 
         // Record the event
         const [eventResult] = await db.query(
@@ -248,16 +256,24 @@ async function handlePostback(req, res) {
 
         console.log('✅ Postback processed successfully for user:', click.user_id,
             `(event: ${eventName}, payout: ${stepCurrency} ${stepPayout})`);
+
+        // Update initial log to success
+        await db.query(
+            'UPDATE postback_logs SET status = ?, click_id = ? WHERE id = ?',
+            ['success', clickid, logId]
+        );
+
         res.status(200).send('OK');
 
     } catch (error) {
         console.error('❌ Error handling postback:', error);
         await logPostbackError(
-            req.query.clickid,
+            req.query.p1 || req.query.clickid || req.query.click_id,
             req.query.offerid,
             req.query,
             req.ip,
-            error.message
+            error.sqlMessage || error.message,
+            logId
         );
         res.status(500).send('ERROR: Internal server error');
     }
@@ -324,13 +340,20 @@ async function creditUserWallet(userId, amount, currencyType = 'cash', offerId, 
 }
 
 // Log postback errors
-async function logPostbackError(clickId, offerId, rawData, ipAddress, errorMessage) {
+async function logPostbackError(clickId, offerId, rawData, ipAddress, errorMessage, logId = null) {
     try {
-        await db.query(
-            `INSERT INTO postback_logs (click_id, offer_id, raw_data, ip_address, status, error_message) 
-            VALUES (?, ?, ?, ?, ?, ?)`,
-            [clickId, offerId, JSON.stringify(rawData), ipAddress, 'failed', errorMessage]
-        );
+        if (logId) {
+            await db.query(
+                `UPDATE postback_logs SET click_id = ?, offer_id = ?, status = ?, error_message = ? WHERE id = ?`,
+                [clickId, offerId, 'failed', errorMessage, logId]
+            );
+        } else {
+            await db.query(
+                `INSERT INTO postback_logs (click_id, offer_id, raw_data, ip_address, status, error_message) 
+                VALUES (?, ?, ?, ?, ?, ?)`,
+                [clickId, offerId, JSON.stringify(rawData), ipAddress, 'failed', errorMessage]
+            );
+        }
     } catch (error) {
         console.error('Error logging postback error:', error);
     }
