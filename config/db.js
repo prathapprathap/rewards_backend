@@ -309,12 +309,18 @@ const initDB = async () => {
         event_id VARCHAR(100),
         points DECIMAL(10, 2) DEFAULT 0.00,
         currency_type VARCHAR(20) DEFAULT 'cash',
+        step_order INT DEFAULT 0,
         is_first_step TINYINT(1) DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (offer_id) REFERENCES offers(id) ON DELETE CASCADE
       )
     `;
     await promisePool.query(createOfferEventStepsTable);
+
+    // Ensure step_order column exists
+    try {
+      await promisePool.query('ALTER TABLE offer_event_steps ADD COLUMN step_order INT DEFAULT 0 AFTER currency_type');
+    } catch (e) { }
 
     const createOfferEventsTable = `
       CREATE TABLE IF NOT EXISTS offer_events (
