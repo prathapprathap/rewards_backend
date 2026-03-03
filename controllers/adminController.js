@@ -90,7 +90,7 @@ exports.createOffer = async (req, res) => {
                 const ev = events[i];
                 await connection.query(
                     `INSERT INTO offer_event_steps
-                     (offer_id, event_id, event_name, points, currency_type, step_order)
+                     (offer_id, event_id, event_name, points, currency_type, \`step_order\`)
                      VALUES (?, ?, ?, ?, ?, ?)`,
                     [newOfferId, ev.event_id || `evt${i}`, ev.event_name,
                         ev.points || 0, ev.currency_type || currency_type, i]
@@ -100,7 +100,7 @@ exports.createOffer = async (req, res) => {
             // Backward-compat: single event_name → one step
             await connection.query(
                 `INSERT INTO offer_event_steps
-                 (offer_id, event_id, event_name, points, currency_type, step_order)
+                 (offer_id, event_id, event_name, points, currency_type, \`step_order\`)
                  VALUES (?, ?, ?, ?, ?, ?)`,
                 [newOfferId, 'evt0', event_name, amount, currency_type, 0]
             );
@@ -182,7 +182,7 @@ exports.updateOffer = async (req, res) => {
                 const ev = events[i];
                 await connection.query(
                     `INSERT INTO offer_event_steps
-                     (offer_id, event_id, event_name, points, currency_type, step_order)
+                     (offer_id, event_id, event_name, points, currency_type, \`step_order\`)
                      VALUES (?, ?, ?, ?, ?, ?)`,
                     [id, ev.event_id || `evt${i}`, ev.event_name,
                         ev.points || 0, ev.currency_type || currency_type, i]
@@ -199,7 +199,9 @@ exports.updateOffer = async (req, res) => {
         await connection.rollback();
         console.error('Error updating offer:', error);
         res.status(500).json({
-            message: 'Server error: ' + (error.sqlMessage || error.message || 'Unknown error occurred')
+            message: 'Server error: ' + (error.sqlMessage || error.message || 'Unknown error occurred'),
+            db_error: error.sqlMessage,
+            query: error.sql
         });
     } finally {
         connection.release();
