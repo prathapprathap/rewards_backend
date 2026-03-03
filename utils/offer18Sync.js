@@ -53,8 +53,9 @@ async function syncConversions(report = 1) {
 
         for (const conv of conversions) {
             try {
-                // p1 = our click ID (passed via tracking URL)
-                const ourClickId = conv.p1;
+                // cid = our click ID (passed via tracking URL as cid= param)
+                // fallback to p1 for older postback format
+                const ourClickId = conv.cid || conv.p1;
                 const eventName = conv.event || 'default';
                 const payout = parseFloat(conv.payout) || 0;
                 const status = conv.status; // 'approved' or 'pending'

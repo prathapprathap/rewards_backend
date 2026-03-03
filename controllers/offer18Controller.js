@@ -68,9 +68,10 @@ async function trackClick(req, res) {
         const finalUrl = trackingUrl
             .replace('{clickid}', clickId)
             .replace('{click_id}', clickId)
-            .replace('{p1}', clickId)          // Offer18 Affiliate Click ID macro
+            .replace('{cid}', clickId)           // Offer18 click ID macro (rupitask.xyz/o/?cid=)
+            .replace('{p1}', clickId)             // Offer18 Affiliate Click ID macro
             .replace('{user_id}', userId)
-            .replace('{uid}', userId)           // alternate user ID macro
+            .replace('{uid}', userId)             // alternate user ID macro
             .replace('{offer_id}', offerId);
 
         res.json({
@@ -114,10 +115,11 @@ async function trackDeviceFingerprint(userId, deviceId, ipAddress, userAgent) {
 async function handlePostback(req, res) {
     try {
         // Accept click ID from multiple parameter names:
-        //   - {p1}       → Offer18's "Affiliate Click ID" macro (primary)
-        //   - {clickid}  → legacy / manual postback
-        //   - {click_id} → alternative format
-        const clickid = req.query.clickid || req.query.p1 || req.query.click_id;
+        //   - {cid}     → Offer18 click ID (rupitask.xyz/o/?cid=) ← PRIMARY
+        //   - {p1}      → Offer18 Affiliate Click ID macro
+        //   - {clickid} → legacy / manual postback
+        //   - {click_id}→ alternative format
+        const clickid = req.query.cid || req.query.clickid || req.query.p1 || req.query.click_id;
         const { payout, status, event, offerid } = req.query;
         const ipAddress = req.ip || req.connection.remoteAddress;
 
