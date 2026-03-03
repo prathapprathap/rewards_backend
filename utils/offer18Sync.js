@@ -191,8 +191,8 @@ async function syncConversions(report = 1) {
 async function creditUserWallet(userId, amount, currencyType = 'cash', offerId, eventId) {
     // Ensure wallet row exists
     await db.query(
-        `INSERT INTO user_wallet_breakdown (user_id, coins, gems, cash)
-         VALUES (?, 0, 0, 0)
+        `INSERT INTO user_wallet_breakdown (user_id, cash)
+         VALUES (?, 0)
          ON DUPLICATE KEY UPDATE user_id = user_id`,
         [userId]
     );
@@ -200,7 +200,7 @@ async function creditUserWallet(userId, amount, currencyType = 'cash', offerId, 
     const [wallets] = await db.query(
         'SELECT * FROM user_wallet_breakdown WHERE user_id = ?', [userId]
     );
-    const wallet = wallets[0] || { coins: 0, gems: 0, cash: 0 };
+    const wallet = wallets[0] || { cash: 0 };
     const balanceBefore = parseFloat(wallet[currencyType]) || 0;
     const balanceAfter = balanceBefore + parseFloat(amount);
 
