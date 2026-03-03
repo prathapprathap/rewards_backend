@@ -54,8 +54,9 @@ async function trackClick(req, res) {
         // Track device fingerprint
         await trackDeviceFingerprint(userId, deviceId, ipAddress, userAgent);
 
-        // Generate tracking URL with macros - check multiple possible field names
-        const trackingUrl = offer.offer_url || offer.tracking_link || offer.offer18_tracking_url || offer.tracking_url;
+        // Generate tracking URL with macros
+        // Priority: tracking_link (Offer18 URL with {clickid}) > offer_url (generic destination)
+        const trackingUrl = offer.tracking_link || offer.offer18_tracking_url || offer.offer_url || offer.tracking_url;
 
         if (!trackingUrl) {
             console.log('No tracking URL found for offer:', offer.id, offer);
