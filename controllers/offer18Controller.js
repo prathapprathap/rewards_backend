@@ -115,11 +115,11 @@ async function trackDeviceFingerprint(userId, deviceId, ipAddress, userAgent) {
 async function handlePostback(req, res) {
     try {
         // Accept click ID from multiple parameter names:
-        //   - {cid}     → Offer18 click ID (rupitask.xyz/o/?cid=) ← PRIMARY
-        //   - {p1}      → Offer18 Affiliate Click ID macro
-        //   - {clickid} → legacy / manual postback
+        //   - {p1}      → Our click ID passed in tracking URL (p1={clickid}) ← PRIMARY
+        //   - {clickid} → explicit clickid param
         //   - {click_id}→ alternative format
-        const clickid = req.query.cid || req.query.clickid || req.query.p1 || req.query.click_id;
+        // NOTE: cid = campaign ID in this Offer18 setup, NOT click ID
+        const clickid = req.query.p1 || req.query.clickid || req.query.click_id;
         const { payout, status, event, offerid } = req.query;
         const ipAddress = req.ip || req.connection.remoteAddress;
 
