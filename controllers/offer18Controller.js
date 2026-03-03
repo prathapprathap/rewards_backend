@@ -126,7 +126,7 @@ async function handlePostback(req, res) {
         await db.query(
             `INSERT INTO postback_logs (click_id, offer_id, raw_data, ip_address, status) 
             VALUES (?, ?, ?, ?, ?)`,
-            [clickid || null, offerid || null, JSON.stringify(req.query), ipAddress, 'received']
+            [clickid || null, offerid || null, JSON.stringify(req.query), ipAddress, 'success']
         );
 
         // Validate required parameters
