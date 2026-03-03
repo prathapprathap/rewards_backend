@@ -31,7 +31,13 @@ module.exports = {
         offer_name, offer_id, heading, history_name, offer_url, 
         amount, event_name, description, image_url, refer_payout, status
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        GET_ALL_OFFERS: 'SELECT * FROM offers ORDER BY created_at DESC',
+        GET_ALL_OFFERS: `
+          SELECT o.*, 
+                 (SELECT COUNT(*) FROM offer_event_steps  WHERE offer_id = o.id) as event_count,
+                 (SELECT GROUP_CONCAT(event_name ORDER BY step_order SEPARATOR '|') FROM offer_event_steps WHERE offer_id = o.id) as event_names
+          FROM offers o
+          ORDER BY o.created_at DESC
+        `,
         COUNT_USERS: 'SELECT COUNT(*) as count FROM users',
         COUNT_TASKS: 'SELECT COUNT(*) as count FROM tasks',
         COUNT_OFFERS: 'SELECT COUNT(*) as count FROM offers',
@@ -61,6 +67,7 @@ module.exports = {
             WHERE id = ?`,
         UPDATE_PROMOCODE: 'UPDATE promocodes SET code = ?, amount = ?, users_limit = ?, for_whom = ?, status = ? WHERE id = ?',
         UPDATE_USER_BALANCE: 'UPDATE users SET wallet_balance = ? WHERE id = ?',
+        GET_OFFER_STEPS: 'SELECT * FROM offer_event_steps WHERE offer_id = ? ORDER BY step_order ASC',
         UPDATE_ADMIN_PASSWORD: 'UPDATE admin_info SET password = ? WHERE id = 1',
     },
     WALLET: {

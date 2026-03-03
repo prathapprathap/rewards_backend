@@ -131,6 +131,18 @@ exports.getAllOffers = async (req, res) => {
     }
 };
 
+// Get steps for a specific offer
+exports.getOfferSteps = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [rows] = await db.query(QUERIES.ADMIN.GET_OFFER_STEPS, [id]);
+        res.status(200).json(rows);
+    } catch (error) {
+        console.error('Error fetching offer steps:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
 // Delete an offer
 exports.deleteOffer = async (req, res) => {
     const { id } = req.params;

@@ -8,6 +8,7 @@ router.get('/tasks', adminController.getAllTasks);
 router.post('/tasks', adminController.createTask);
 router.delete('/tasks/:id', adminController.deleteTask);
 router.get('/offers', adminController.getAllOffers);
+router.get('/offers/:id/steps', adminController.getOfferSteps);
 router.post('/offers', adminController.createOffer);
 router.put('/offers/:id', adminController.updateOffer);
 router.delete('/offers/:id', adminController.deleteOffer);
