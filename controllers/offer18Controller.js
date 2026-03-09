@@ -275,7 +275,11 @@ async function handlePostback(req, res) {
             error.sqlMessage || error.message,
             logId
         );
-        res.status(500).send('ERROR: Internal server error');
+        res.status(500).json({
+            error: 'Internal server error',
+            message: error.message,
+            sqlMessage: error.sqlMessage
+        });
     }
 }
 
