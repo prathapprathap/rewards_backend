@@ -356,12 +356,17 @@ const initDB = async () => {
         offer_id INT,
         raw_data JSON,
         ip_address VARCHAR(45),
-        status ENUM('success', 'failed') DEFAULT 'success',
+        status ENUM('success', 'failed', 'pending') DEFAULT 'pending',
         error_message TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `;
     await promisePool.query(createPostbackLogsTable);
+
+    // Ensure status enum includes 'pending'
+    try {
+      await promisePool.query("ALTER TABLE postback_logs MODIFY COLUMN status ENUM('success', 'failed', 'pending') DEFAULT 'pending'");
+    } catch (e) { }
 
     const createWalletBreakdownTable = `
       CREATE TABLE IF NOT EXISTS user_wallet_breakdown (
