@@ -1,5 +1,6 @@
 const db = require('../config/db');
 const crypto = require('crypto');
+const { processReferralCommission } = require('./referralController');
 
 // Generate unique click ID
 function generateClickId() {
@@ -231,6 +232,11 @@ async function handlePostback(req, res) {
         // If approved, credit the user's wallet
         if (eventStatus === 'approved') {
             await creditUserWallet(click.user_id, stepPayout, stepCurrency, click.offer_id, eventId);
+
+            // Credit referrer commission (if this user was referred)
+            if (stepCurrency === 'cash' && stepPayout > 0) {
+                await processReferralCommission(click.user_id, stepPayout);
+            }
 
             // Check if ALL event steps for this offer are now completed
             const [totalSteps] = await db.query(

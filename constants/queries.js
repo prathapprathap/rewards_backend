@@ -16,7 +16,7 @@ module.exports = {
         GENERATE_REFERRAL_CODE: 'UPDATE users SET referral_code = ? WHERE id = ?',
         GET_USER_BY_REFERRAL_CODE: 'SELECT id FROM users WHERE referral_code = ?',
         SET_REFERRED_BY: 'UPDATE users SET referred_by = ? WHERE id = ?',
-        ADD_REFERRAL_EARNINGS: 'UPDATE users SET wallet_balance = wallet_balance + ?, referral_earnings = referral_earnings + ?, total_earnings = total_earnings + ? WHERE id = ?',
+        ADD_REFERRAL_EARNINGS: 'UPDATE users SET wallet_balance = wallet_balance + ?, total_earnings = total_earnings + ?, referral_earnings = referral_earnings + ? WHERE id = ?',
         GET_REFERRAL_STATS: 'SELECT COUNT(*) as total_referrals, SUM(CASE WHEN status = "COMPLETED" THEN 1 ELSE 0 END) as successful_referrals, SUM(commission_earned) as total_commission FROM referrals WHERE referrer_id = ?',
         CREATE_REFERRAL: 'INSERT INTO referrals (referrer_id, referred_user_id) VALUES (?, ?)',
         MARK_REFERRAL_COMPLETED: 'UPDATE referrals SET status = "COMPLETED", commission_earned = ?, completed_at = NOW() WHERE referred_user_id = ? AND status = "PENDING"',

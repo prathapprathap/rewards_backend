@@ -64,6 +64,19 @@ const initDB = async () => {
     await promisePool.query(createUsersTable);
     console.log('Users table checked/created successfully.');
 
+    // Ensure extra columns exist (safe migrations)
+    const userMigrations = [
+      "ALTER TABLE users ADD COLUMN referral_code VARCHAR(10) UNIQUE",
+      "ALTER TABLE users ADD COLUMN referred_by VARCHAR(10)",
+      "ALTER TABLE users ADD COLUMN total_earnings DECIMAL(10,2) DEFAULT 0.00",
+      "ALTER TABLE users ADD COLUMN referral_earnings DECIMAL(10,2) DEFAULT 0.00",
+      "ALTER TABLE users ADD COLUMN last_checkin_date DATE",
+    ];
+    for (const sql of userMigrations) {
+      try { await promisePool.query(sql); } catch (e) { /* column already exists */ }
+    }
+
+
     const createTasksTable = `
       CREATE TABLE IF NOT EXISTS tasks (
         id INT AUTO_INCREMENT PRIMARY KEY,
