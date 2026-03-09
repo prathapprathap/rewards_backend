@@ -314,10 +314,22 @@ exports.useSpin = async (req, res) => {
             [reward, reward, userId]
         );
 
-        // Record transaction
+        // Record transaction in wallet_transactions for consistency
+        const [wallets] = await db.query('SELECT cash FROM user_wallet_breakdown WHERE user_id = ?', [userId]);
+        const currentCash = wallets[0] ? parseFloat(wallets[0].cash) : 0;
+
         await db.query(
-            'INSERT INTO transactions (user_id, type, amount, description) VALUES (?, ?, ?, ?)',
-            [userId, 'CREDIT', reward, 'Spin & Win reward']
+            `INSERT INTO wallet_transactions 
+            (user_id, transaction_type, currency_type, amount, balance_before, balance_after, description) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [userId, 'spin', 'cash', reward, currentCash, currentCash + reward, 'Spin & Win reward']
+        );
+
+        // Update user_wallet_breakdown
+        await db.query(
+            `INSERT INTO user_wallet_breakdown (user_id, cash) VALUES (?, ?) 
+             ON DUPLICATE KEY UPDATE cash = cash + ?`,
+            [userId, reward, reward]
         );
 
         // Get updated data

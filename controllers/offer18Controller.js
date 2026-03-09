@@ -41,6 +41,16 @@ async function trackClick(req, res) {
 
         const offer = offers[0];
 
+        // Check if user has already completed this offer
+        const [completedCheck] = await db.query(
+            "SELECT id FROM offer_clicks WHERE user_id = ? AND offer_id = ? AND status = 'completed'",
+            [userId, offerId]
+        );
+
+        if (completedCheck.length > 0) {
+            return res.status(400).json({ error: 'You have already completed this offer' });
+        }
+
         // Generate unique click ID
         const clickId = generateClickId();
 
@@ -152,51 +162,63 @@ async function handlePostback(req, res) {
         }
 
         const click = clicks[0];
-        const eventName = event || 'default';
+        const eventNameFromQuery = event || 'default';
 
-        // Check for duplicate postback (same click + same event)
-        const [existingEvents] = await db.query(
-            'SELECT * FROM offer_events WHERE click_id = ? AND event_name = ?',
-            [clickid, eventName]
-        );
-
-        if (existingEvents.length > 0) {
-            await logPostbackError(clickid, offerid, req.query, ipAddress, 'Duplicate postback', logId);
-            return res.status(200).send('OK: Already processed');
-        }
-
-        // Get offer details
-        const [offers] = await db.query('SELECT * FROM offers WHERE id = ?', [click.offer_id]);
-        if (offers.length === 0) {
-            await logPostbackError(clickid, offerid, req.query, ipAddress, 'Offer not found', logId);
-            return res.status(404).send('ERROR: Offer not found');
-        }
-
-        const offer = offers[0];
-
-        // Prioritize database points over postback payout for consistency
-        let stepPayout = 0;
-        let stepCurrency = 'cash';
-        let eventStepId = null;
-
+        // 1. First, try to match the event step
         const [steps] = await db.query(
             `SELECT * FROM offer_event_steps
              WHERE offer_id = ? AND (event_name = ? OR event_id = ?)
              LIMIT 1`,
-            [click.offer_id, eventName, eventName]
+            [click.offer_id, eventNameFromQuery, eventNameFromQuery]
         );
+
+        let stepPayout = 0;
+        let stepCurrency = 'cash';
+        let eventStepId = null;
+        let normalizedEventName = eventNameFromQuery;
 
         if (steps.length > 0) {
             const step = steps[0];
-            stepPayout = parseFloat(step.points) || 0; // Priority: DB points
+            stepPayout = parseFloat(step.points) || 0;
             stepCurrency = step.currency_type || 'cash';
             eventStepId = step.id;
+            normalizedEventName = step.event_name; // Use the canonical event name from DB
             console.log(`   ↳ Matched event step: "${step.event_name}" → ${stepCurrency} ${stepPayout}`);
         } else {
-            // Fallback: use offer-level amount or postback payout
+            // Get offer details for fallback
+            const [offers] = await db.query('SELECT * FROM offers WHERE id = ?', [click.offer_id]);
+            const offer = offers[0] || {};
             stepPayout = parseFloat(offer.amount) || parseFloat(payout) || 0;
             stepCurrency = offer.currency_type || 'cash';
+            normalizedEventName = eventNameFromQuery; // Keep the query value if no step matched
             console.log(`   ↳ No matching step; using fallback payout: ${stepCurrency} ${stepPayout}`);
+        }
+
+        // 2. CHECK FOR DUPLICATES (Global User+Offer+NormalizedEvent check)
+        // This prevents double pay even if they click again and get a new clickid
+        const [existingApproved] = await db.query(
+            `SELECT id FROM offer_events 
+             WHERE user_id = ? AND offer_id = ? 
+             AND (event_step_id = ? OR (event_step_id IS NULL AND event_name = ?))
+             AND status = 'approved' 
+             LIMIT 1`,
+            [click.user_id, click.offer_id, eventStepId, normalizedEventName]
+        );
+
+        if (existingApproved.length > 0) {
+            console.log(`   ⚠️ Skipping: User ${click.user_id} already rewarded for offer ${click.offer_id} event ${normalizedEventName}`);
+            return res.status(200).send('OK: Already processed and rewarded');
+        }
+
+        // 3. Check if THIS specific click has already processed THIS specific postback
+        const [existingPostback] = await db.query(
+            'SELECT * FROM offer_events WHERE click_id = ? AND event_name = ?',
+            [clickid, eventNameFromQuery]
+        );
+
+        if (existingPostback.length > 0) {
+            await logPostbackError(clickid, offerid, req.query, ipAddress, 'Duplicate postback for this click', logId);
+            return res.status(200).send('OK: Already processed for this click');
         }
 
         // Handle Offer18 status: default to approved if missing or placeholder
@@ -218,7 +240,7 @@ async function handlePostback(req, res) {
                 eventStepId,
                 click.offer_id,
                 click.user_id,
-                eventName,
+                normalizedEventName,
                 stepPayout,
                 stepCurrency,
                 eventStatus,
@@ -244,11 +266,9 @@ async function handlePostback(req, res) {
                 [click.offer_id]
             );
             const [completedSteps] = await db.query(
-                `SELECT COUNT(DISTINCT oe.event_name) as cnt
+                `SELECT COUNT(DISTINCT oe.event_step_id) as cnt
                  FROM offer_events oe
-                 INNER JOIN offer_event_steps oes
-                   ON oes.offer_id = oe.offer_id AND oes.event_name = oe.event_name
-                 WHERE oe.click_id = ? AND oe.status = 'approved'`,
+                 WHERE oe.click_id = ? AND oe.status = 'approved' AND oe.event_step_id IS NOT NULL`,
                 [clickid]
             );
 
@@ -261,7 +281,7 @@ async function handlePostback(req, res) {
         }
 
         console.log('✅ Postback processed successfully for user:', click.user_id,
-            `(event: ${eventName}, payout: ${stepCurrency} ${stepPayout})`);
+            `(event: ${normalizedEventName}, payout: ${stepCurrency} ${stepPayout})`);
 
         // Update initial log to success
         await db.query(
@@ -466,7 +486,8 @@ async function getTransactionHistory(req, res) {
             `SELECT 
                 wt.*,
                 o.offer_name,
-                o.heading as offer_heading
+                o.heading as offer_heading,
+                o.image_url as offer_image
             FROM wallet_transactions wt
             LEFT JOIN offers o ON wt.offer_id = o.id
             WHERE wt.user_id = ?
