@@ -83,19 +83,24 @@ exports.createOffer = async (req, res) => {
         );
 
         const newOfferId = result.insertId;
+        let totalAmount = 0;
 
         // Insert event steps if provided
         if (Array.isArray(events) && events.length > 0) {
             for (let i = 0; i < events.length; i++) {
                 const ev = events[i];
+                const points = parseFloat(ev.points) || 0;
+                totalAmount += points;
                 await connection.query(
                     `INSERT INTO offer_event_steps
                      (offer_id, event_id, event_name, points, currency_type, \`step_order\`)
                      VALUES (?, ?, ?, ?, ?, ?)`,
                     [newOfferId, ev.event_id || `evt${i}`, ev.event_name,
-                        ev.points || 0, ev.currency_type || currency_type, i]
+                        points, ev.currency_type || currency_type, i]
                 );
             }
+            // Update offer total amount based on steps
+            await connection.query('UPDATE offers SET amount = ? WHERE id = ?', [totalAmount, newOfferId]);
         } else if (event_name) {
             // Backward-compat: single event_name → one step
             await connection.query(
@@ -190,16 +195,21 @@ exports.updateOffer = async (req, res) => {
             await connection.query(
                 'DELETE FROM offer_event_steps WHERE offer_id = ?', [id]
             );
+            let totalAmount = 0;
             for (let i = 0; i < events.length; i++) {
                 const ev = events[i];
+                const points = parseFloat(ev.points) || 0;
+                totalAmount += points;
                 await connection.query(
                     `INSERT INTO offer_event_steps
                      (offer_id, event_id, event_name, points, currency_type, \`step_order\`)
                      VALUES (?, ?, ?, ?, ?, ?)`,
                     [id, ev.event_id || `evt${i}`, ev.event_name,
-                        ev.points || 0, ev.currency_type || currency_type, i]
+                        points, ev.currency_type || currency_type, i]
                 );
             }
+            // Sync the main offer amount with the steps total
+            await connection.query('UPDATE offers SET amount = ? WHERE id = ?', [totalAmount, id]);
         }
 
         await connection.commit();

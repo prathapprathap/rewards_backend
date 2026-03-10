@@ -7,7 +7,7 @@ const dbConfig = {
   host: process.env.DB_HOST || 'localhost',
   user: process.env.DB_USER || 'root',
   password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'hot_reward_db',
+  database: process.env.DB_NAME || 'defaultdb',
   port: process.env.DB_PORT || 3306,
   waitForConnections: true,
   connectionLimit: 10,
@@ -19,33 +19,11 @@ if (process.env.DB_SSL === 'true') {
 }
 
 const pool = mysql.createPool(dbConfig);
-
 const promisePool = pool.promise();
 
 const initDB = async () => {
   try {
-    // Check if database exists, if not create it (requires root connection without db selected usually, but here we assume db might exist or we handle it)
-    // For simplicity in this environment, we'll assume the DB is created or we can try to create it.
-    // Actually, standard mysql2 connection fails if DB doesn't exist. 
-    // Let's try to connect without DB first to create it.
-
-    const connectionConfig = {
-      host: process.env.DB_HOST || 'localhost',
-      user: process.env.DB_USER || 'root',
-      password: process.env.DB_PASSWORD || '',
-      port: process.env.DB_PORT || 3306,
-    };
-
-    if (process.env.DB_SSL === 'true') {
-      connectionConfig.ssl = { rejectUnauthorized: false };
-    }
-
-    const connection = await mysql.createConnection(connectionConfig).promise();
-
-    await connection.query(`CREATE DATABASE IF NOT EXISTS \`${process.env.DB_NAME || 'hot_reward_db'}\``);
-    await connection.end();
-
-    console.log('Database checked/created successfully.');
+    console.log('Verifying tables in database:', dbConfig.database);
 
     // Now create tables
     const createUsersTable = `

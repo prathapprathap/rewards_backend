@@ -165,11 +165,9 @@ async function handlePostback(req, res) {
         const eventNameFromQuery = event || 'default';
 
         // 1. First, try to match the event step
-        const [steps] = await db.query(
-            `SELECT * FROM offer_event_steps
-             WHERE offer_id = ? AND (event_name = ? OR event_id = ?)
-             LIMIT 1`,
-            [click.offer_id, eventNameFromQuery, eventNameFromQuery]
+        const [allSteps] = await db.query(
+            'SELECT * FROM offer_event_steps WHERE offer_id = ? ORDER BY step_order ASC',
+            [click.offer_id]
         );
 
         let stepPayout = 0;
@@ -177,21 +175,40 @@ async function handlePostback(req, res) {
         let eventStepId = null;
         let normalizedEventName = eventNameFromQuery;
 
-        if (steps.length > 0) {
-            const step = steps[0];
-            stepPayout = parseFloat(step.points) || 0;
-            stepCurrency = step.currency_type || 'cash';
-            eventStepId = step.id;
-            normalizedEventName = step.event_name; // Use the canonical event name from DB
-            console.log(`   ↳ Matched event step: "${step.event_name}" → ${stepCurrency} ${stepPayout}`);
+        const matchedStep = allSteps.find(s =>
+            s.event_name === eventNameFromQuery || s.event_id === eventNameFromQuery
+        );
+
+        if (matchedStep) {
+            stepPayout = parseFloat(matchedStep.points) || 0;
+            stepCurrency = matchedStep.currency_type || 'cash';
+            eventStepId = matchedStep.id;
+            normalizedEventName = matchedStep.event_name;
+            console.log(`   ↳ Matched event step: "${matchedStep.event_name}" → ${stepCurrency} ${stepPayout}`);
+        } else if (allSteps.length > 0) {
+            // Offer HAS multiple steps, but this postback didn't match any.
+            if (eventNameFromQuery === 'default') {
+                // If it's a default/install postback with no event name, award the FIRST step (Order 0)
+                const firstStep = allSteps[0];
+                stepPayout = parseFloat(firstStep.points) || 0;
+                stepCurrency = firstStep.currency_type || 'cash';
+                eventStepId = firstStep.id;
+                normalizedEventName = firstStep.event_name;
+                console.log(`   ↳ No event name in query; defaulting to first step: "${firstStep.event_name}" → ${stepCurrency} ${stepPayout}`);
+            } else {
+                // Unknown event name for a multi-step offer — don't credit total amount!
+                console.log(`   ⚠️ Unknown event "${eventNameFromQuery}" for multi-step offer ${click.offer_id}. Skipping payout.`);
+                await logPostbackError(clickid, offerid, req.query, ipAddress, 'Unknown event for multi-step offer', logId);
+                return res.status(200).send('OK: Event not matched, skipping payout');
+            }
         } else {
-            // Get offer details for fallback
+            // Fallback: Legacy offer with NO steps in offer_event_steps table
             const [offers] = await db.query('SELECT * FROM offers WHERE id = ?', [click.offer_id]);
             const offer = offers[0] || {};
             stepPayout = parseFloat(offer.amount) || parseFloat(payout) || 0;
             stepCurrency = offer.currency_type || 'cash';
-            normalizedEventName = eventNameFromQuery; // Keep the query value if no step matched
-            console.log(`   ↳ No matching step; using fallback payout: ${stepCurrency} ${stepPayout}`);
+            normalizedEventName = eventNameFromQuery;
+            console.log(`   ↳ Legacy offer (no steps); using fallback payout: ${stepCurrency} ${stepPayout}`);
         }
 
         // 2. CHECK FOR DUPLICATES (Global User+Offer+NormalizedEvent check)
