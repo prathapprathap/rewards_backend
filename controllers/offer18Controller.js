@@ -175,9 +175,13 @@ async function handlePostback(req, res) {
         let eventStepId = null;
         let normalizedEventName = eventNameFromQuery;
 
-        const matchedStep = allSteps.find(s =>
-            s.event_name === eventNameFromQuery || s.event_id === eventNameFromQuery
-        );
+        const queryValClean = eventNameFromQuery.trim().toLowerCase();
+
+        const matchedStep = allSteps.find(s => {
+            const nameMatch = (s.event_name || '').trim().toLowerCase() === queryValClean;
+            const idMatch = (s.event_id || '').trim().toLowerCase() === queryValClean;
+            return nameMatch || idMatch;
+        });
 
         if (matchedStep) {
             stepPayout = parseFloat(matchedStep.points) || 0;
