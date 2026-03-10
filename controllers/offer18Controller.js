@@ -228,6 +228,7 @@ async function handlePostback(req, res) {
 
         if (existingApproved.length > 0) {
             console.log(`   ⚠️ Skipping: User ${click.user_id} already rewarded for offer ${click.offer_id} event ${normalizedEventName}`);
+            await db.query('UPDATE postback_logs SET status = ?, click_id = ? WHERE id = ?', ['success', clickid, logId]);
             return res.status(200).send('OK: Already processed and rewarded');
         }
 
@@ -238,7 +239,8 @@ async function handlePostback(req, res) {
         );
 
         if (existingPostback.length > 0) {
-            await logPostbackError(clickid, offerid, req.query, ipAddress, 'Duplicate postback for this click', logId);
+            console.log(`   ⚠️ Skipping: Duplicate postback for clickID ${clickid} event ${eventNameFromQuery}`);
+            await db.query('UPDATE postback_logs SET status = ?, click_id = ? WHERE id = ?', ['success', clickid, logId]);
             return res.status(200).send('OK: Already processed for this click');
         }
 
