@@ -155,7 +155,7 @@ exports.getUserOffers = async (req, res) => {
 
     try {
         // Get all offers
-        const [offers] = await db.query('SELECT * FROM offers WHERE status = ? ORDER BY created_at DESC', ['active']);
+        const [offers] = await db.query('SELECT * FROM offers WHERE LOWER(status) = ? ORDER BY created_at DESC', ['active']);
 
         // Get scratched offers for this user
         const [scratched] = await db.query(
