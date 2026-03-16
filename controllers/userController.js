@@ -165,11 +165,81 @@ exports.getUserOffers = async (req, res) => {
 
         const scratchedIds = new Set(scratched.map(s => s.offer_id));
 
-        // Mark offers as scratched or not
-        const offersWithStatus = offers.map(offer => ({
-            ...offer,
-            is_scratched: scratchedIds.has(offer.id)
-        }));
+        // Get all offer IDs
+        const offerIds = offers.map(o => o.id);
+
+        // Get completion data: which events the user has completed (approved) for each offer
+        let completionMap = {}; // offerId -> { completed_steps, earned_amount, events: [...] }
+        let totalStepsMap = {}; // offerId -> total step count
+
+        if (offerIds.length > 0) {
+            const placeholders = offerIds.map(() => '?').join(',');
+
+            // Get total steps per offer
+            const [stepCounts] = await db.query(
+                `SELECT offer_id, COUNT(*) as total_steps
+                 FROM offer_event_steps
+                 WHERE offer_id IN (${placeholders})
+                 GROUP BY offer_id`,
+                offerIds
+            );
+            for (const sc of stepCounts) {
+                totalStepsMap[sc.offer_id] = sc.total_steps;
+            }
+
+            // Get user's completed events for these offers
+            // We look at offer_events (approved status) and join with offer_event_steps
+            // to get the points awarded per step
+            const [completedEvents] = await db.query(
+                `SELECT oe.offer_id, oe.event_name, oe.payout,
+                        oes.points as step_points
+                 FROM offer_events oe
+                 LEFT JOIN offer_event_steps oes
+                   ON oe.offer_id = oes.offer_id
+                   AND LOWER(TRIM(oe.event_name)) = LOWER(TRIM(oes.event_name))
+                 WHERE oe.user_id = ?
+                   AND oe.offer_id IN (${placeholders})
+                   AND oe.status = 'approved'
+                 GROUP BY oe.offer_id, oe.event_name`,
+                [userId, ...offerIds]
+            );
+
+            for (const ev of completedEvents) {
+                if (!completionMap[ev.offer_id]) {
+                    completionMap[ev.offer_id] = {
+                        completed_steps: 0,
+                        earned_amount: 0,
+                        events: []
+                    };
+                }
+                const earned = parseFloat(ev.step_points) || parseFloat(ev.payout) || 0;
+                completionMap[ev.offer_id].completed_steps += 1;
+                completionMap[ev.offer_id].earned_amount += earned;
+                completionMap[ev.offer_id].events.push({
+                    event_name: ev.event_name,
+                    earned: earned
+                });
+            }
+        }
+
+        // Mark offers with scratch + completion status
+        const offersWithStatus = offers.map(offer => {
+            const totalSteps = totalStepsMap[offer.id] || 0;
+            const completion = completionMap[offer.id] || { completed_steps: 0, earned_amount: 0, events: [] };
+            const isAllCompleted = totalSteps > 0 && completion.completed_steps >= totalSteps;
+            const hasAnyCompletion = completion.completed_steps > 0;
+
+            return {
+                ...offer,
+                is_scratched: scratchedIds.has(offer.id),
+                completed_steps: completion.completed_steps,
+                total_steps: totalSteps,
+                earned_amount: completion.earned_amount,
+                is_completed: isAllCompleted,
+                has_partial_completion: hasAnyCompletion && !isAllCompleted,
+                completed_events: completion.events
+            };
+        });
 
         return res.status(200).json(offersWithStatus);
     } catch (error) {
