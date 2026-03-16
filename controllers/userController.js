@@ -155,15 +155,23 @@ exports.getUserOffers = async (req, res) => {
 
     try {
         // Get all offers
-        const [offers] = await db.query('SELECT * FROM offers WHERE LOWER(status) = ? ORDER BY created_at DESC', ['active']);
-
-        // Get scratched offers for this user
-        const [scratched] = await db.query(
-            'SELECT offer_id FROM scratched_offers WHERE user_id = ?',
-            [userId]
+        const [offers] = await db.query(
+            `SELECT * FROM offers 
+             WHERE LOWER(status) NOT IN ('inactive', 'disabled', 'deleted') 
+             ORDER BY created_at DESC`
         );
 
-        const scratchedIds = new Set(scratched.map(s => s.offer_id));
+        // Get scratched offers for this user
+        let scratchedIds = new Set();
+        try {
+            const [scratched] = await db.query(
+                'SELECT offer_id FROM scratched_offers WHERE user_id = ?',
+                [userId]
+            );
+            scratchedIds = new Set(scratched.map(s => s.offer_id));
+        } catch (e) {
+            console.error('Error fetching scratched offers (table may not exist):', e.message);
+        }
 
         // Get all offer IDs
         const offerIds = offers.map(o => o.id);
@@ -173,52 +181,55 @@ exports.getUserOffers = async (req, res) => {
         let totalStepsMap = {}; // offerId -> total step count
 
         if (offerIds.length > 0) {
-            const placeholders = offerIds.map(() => '?').join(',');
+            try {
+                const placeholders = offerIds.map(() => '?').join(',');
 
-            // Get total steps per offer
-            const [stepCounts] = await db.query(
-                `SELECT offer_id, COUNT(*) as total_steps
-                 FROM offer_event_steps
-                 WHERE offer_id IN (${placeholders})
-                 GROUP BY offer_id`,
-                offerIds
-            );
-            for (const sc of stepCounts) {
-                totalStepsMap[sc.offer_id] = sc.total_steps;
-            }
-
-            // Get user's completed events for these offers
-            // We look at offer_events (approved status) and join with offer_event_steps
-            // to get the points awarded per step
-            const [completedEvents] = await db.query(
-                `SELECT oe.offer_id, oe.event_name, oe.payout,
-                        oes.points as step_points
-                 FROM offer_events oe
-                 LEFT JOIN offer_event_steps oes
-                   ON oe.offer_id = oes.offer_id
-                   AND LOWER(TRIM(oe.event_name)) = LOWER(TRIM(oes.event_name))
-                 WHERE oe.user_id = ?
-                   AND oe.offer_id IN (${placeholders})
-                   AND oe.status = 'approved'
-                 GROUP BY oe.offer_id, oe.event_name`,
-                [userId, ...offerIds]
-            );
-
-            for (const ev of completedEvents) {
-                if (!completionMap[ev.offer_id]) {
-                    completionMap[ev.offer_id] = {
-                        completed_steps: 0,
-                        earned_amount: 0,
-                        events: []
-                    };
+                // Get total steps per offer
+                const [stepCounts] = await db.query(
+                    `SELECT offer_id, COUNT(*) as total_steps
+                     FROM offer_event_steps
+                     WHERE offer_id IN (${placeholders})
+                     GROUP BY offer_id`,
+                    offerIds
+                );
+                for (const sc of stepCounts) {
+                    totalStepsMap[sc.offer_id] = sc.total_steps;
                 }
-                const earned = parseFloat(ev.step_points) || parseFloat(ev.payout) || 0;
-                completionMap[ev.offer_id].completed_steps += 1;
-                completionMap[ev.offer_id].earned_amount += earned;
-                completionMap[ev.offer_id].events.push({
-                    event_name: ev.event_name,
-                    earned: earned
-                });
+
+                // Get user's completed events for these offers
+                const [completedEvents] = await db.query(
+                    `SELECT oe.offer_id, oe.event_name, oe.payout,
+                            oes.points as step_points
+                     FROM offer_events oe
+                     LEFT JOIN offer_event_steps oes
+                       ON oe.offer_id = oes.offer_id
+                       AND LOWER(TRIM(oe.event_name)) = LOWER(TRIM(oes.event_name))
+                     WHERE oe.user_id = ?
+                       AND oe.offer_id IN (${placeholders})
+                       AND oe.status = 'approved'
+                     GROUP BY oe.offer_id, oe.event_name`,
+                    [userId, ...offerIds]
+                );
+
+                for (const ev of completedEvents) {
+                    if (!completionMap[ev.offer_id]) {
+                        completionMap[ev.offer_id] = {
+                            completed_steps: 0,
+                            earned_amount: 0,
+                            events: []
+                        };
+                    }
+                    const earned = parseFloat(ev.step_points) || parseFloat(ev.payout) || 0;
+                    completionMap[ev.offer_id].completed_steps += 1;
+                    completionMap[ev.offer_id].earned_amount += earned;
+                    completionMap[ev.offer_id].events.push({
+                        event_name: ev.event_name,
+                        earned: earned
+                    });
+                }
+            } catch (e) {
+                console.error('Error fetching completion data (tables may not exist):', e.message);
+                // Continue without completion data - offers will still show
             }
         }
 
