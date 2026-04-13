@@ -7,8 +7,9 @@ router.post('/google-login', userController.loginWithGoogle);
 router.get('/:id', userController.getUserProfile);
 router.get('/:userId/offers', userController.getUserOffers);
 router.post('/:userId/scratch-offer', userController.scratchOffer);
-router.get('/:userId/spins', userController.getUserSpins);
-router.post('/:userId/use-spin', userController.useSpin);
+router.get('/spins/:userId', userController.getUserSpins);
+router.post('/spins/:userId/use', userController.useSpin);
+router.post('/promo/:userId/redeem', userController.redeemPromoCode);
 router.get('/:userId/referral-stats', referralController.getReferralStats);
 router.get('/app/settings', userController.getAppSettings);
 

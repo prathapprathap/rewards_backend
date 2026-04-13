@@ -430,6 +430,114 @@ exports.useSpin = async (req, res) => {
     }
 };
 
+// Redeem promo code
+exports.redeemPromoCode = async (req, res) => {
+    const { userId } = req.params;
+    const { code } = req.body;
+
+    if (!code) {
+        return res.status(400).json({ message: 'Code is required' });
+    }
+
+    try {
+        // Check if code exists and is active
+        const [codes] = await db.query(
+            'SELECT * FROM promocodes WHERE code = ? AND status = ?',
+            [code, 'Active']
+        );
+
+        if (codes.length === 0) {
+            return res.status(404).json({ message: 'Invalid or expired code' });
+        }
+
+        const promoCode = codes[0];
+
+        // Check overall limit
+        if (promoCode.claimed_count >= promoCode.users_limit) {
+            return res.status(400).json({ message: 'This code usage limit has been reached' });
+        }
+
+        // Check if user already used this code
+        const [used] = await db.query(
+            'SELECT * FROM used_promo_codes WHERE user_id = ? AND promo_id = ?',
+            [userId, promoCode.id]
+        );
+
+        if (used.length > 0) {
+            return res.status(400).json({ message: 'You have already used this code' });
+        }
+
+        // --- CHECK CONDITIONS ---
+
+        // 1. Minimum Offers Condition
+        if (promoCode.min_offers > 0) {
+            const [offerCount] = await db.query(
+                `SELECT COUNT(DISTINCT offer_id) as count 
+                 FROM offer_events 
+                 WHERE user_id = ? AND status = 'approved'`,
+                [userId]
+            );
+            if (offerCount[0].count < promoCode.min_offers) {
+                return res.status(400).json({
+                    message: `You need to complete at least ${promoCode.min_offers} offers to use this code.`
+                });
+            }
+        }
+
+        // 2. Minimum Referrals Condition
+        if (promoCode.min_referrals > 0) {
+            const [referralCount] = await db.query(
+                `SELECT COUNT(*) as count 
+                 FROM referrals 
+                 WHERE referrer_id = ? AND status = 'COMPLETED'`,
+                [userId]
+            );
+            if (referralCount[0].count < promoCode.min_referrals) {
+                return res.status(400).json({
+                    message: `You need to have at least ${promoCode.min_referrals} successful referrals to use this code.`
+                });
+            }
+        }
+
+        // All checks passed - Credit wallet
+        const reward = parseFloat(promoCode.amount);
+
+        // Transaction safety: Update claimed count and wallet
+        await db.query('UPDATE promocodes SET claimed_count = claimed_count + 1 WHERE id = ?', [promoCode.id]);
+
+        await db.query(
+            'UPDATE users SET wallet_balance = wallet_balance + ?, total_earnings = total_earnings + ? WHERE id = ?',
+            [reward, reward, userId]
+        );
+
+        // Record usage
+        await db.query(
+            'INSERT INTO used_promo_codes (user_id, promo_id) VALUES (?, ?)',
+            [userId, promoCode.id]
+        );
+
+        // Record transaction
+        const [userWallet] = await db.query('SELECT wallet_balance FROM users WHERE id = ?', [userId]);
+        const balanceAfter = userWallet[0].wallet_balance;
+        const balanceBefore = balanceAfter - reward;
+
+        await db.query(
+            `INSERT INTO wallet_transactions 
+            (user_id, transaction_type, currency_type, amount, balance_before, balance_after, description) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [userId, 'promo', 'cash', reward, balanceBefore, balanceAfter, `Redeemed code: ${code}`]
+        );
+
+        return res.status(200).json({
+            message: `Congratulations! You received ₹${reward} reward.`,
+            reward: reward
+        });
+    } catch (error) {
+        console.error('Error in redeemPromoCode:', error);
+        return res.status(500).json({ message: 'Server error' });
+    }
+};
+
 // Get app settings
 exports.getAppSettings = async (req, res) => {
     try {

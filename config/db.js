@@ -218,6 +218,8 @@ const initDB = async () => {
         amount DECIMAL(10, 2) NOT NULL,
         users_limit INT NOT NULL,
         claimed_count INT DEFAULT 0,
+        min_offers INT DEFAULT 0,
+        min_referrals INT DEFAULT 0,
         for_whom ENUM('All', 'New', 'Old') DEFAULT 'All',
         status ENUM('Active', 'Inactive') DEFAULT 'Active',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -225,6 +227,20 @@ const initDB = async () => {
     `;
     await promisePool.query(createPromoCodesTable);
     console.log('Promocodes table checked/created successfully.');
+
+    const createUsedPromoCodesTable = `
+      CREATE TABLE IF NOT EXISTS used_promo_codes (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        promo_id INT NOT NULL,
+        claimed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (promo_id) REFERENCES promocodes(id) ON DELETE CASCADE,
+        UNIQUE KEY unique_user_promo (user_id, promo_id)
+      )
+    `;
+    await promisePool.query(createUsedPromoCodesTable);
+    console.log('Used promo codes table checked/created successfully.');
 
     // Insert default settings if not exists
     const defaultSettings = [
@@ -247,6 +263,7 @@ const initDB = async () => {
       ['captcha_private_key', '6LfR3ZUqAAAAAMXv8CTaZ6IBPjk7Op_SFQFzhPmn', 'Google Captcha Private Key'],
       ['earning_percent', '50', 'General earning percentage multiplier'],
       ['support_email', 'support@rewardmobi.xyz', 'Admin support contact email'],
+      ['primary_color', '#6DC000', 'Primary theme color'],
     ];
 
     for (const [key, value, description] of defaultSettings) {
