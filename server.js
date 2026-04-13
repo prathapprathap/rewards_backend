@@ -8,7 +8,6 @@ const adminRoutes = require('./routes/adminRoutes');
 const walletRoutes = require('./routes/walletRoutes');
 const offer18Routes = require('./routes/offer18Routes');
 const offerRoutes = require('./routes/offerRoutes');
-const scratchCardRoutes = require('./routes/scratchCardRoutes');
 
 const http = require('http');
 
@@ -26,7 +25,6 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/wallet', walletRoutes);
 app.use('/api/offer18', offer18Routes);
 app.use('/api/offers', offerRoutes);
-app.use('/api/scratch', scratchCardRoutes);
 
 
 // Database Keep-Alive Route
