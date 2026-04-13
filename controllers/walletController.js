@@ -30,20 +30,30 @@ exports.requestWithdrawal = async (req, res) => {
         const [user] = await db.query(QUERIES.USER.GET_WALLET_BALANCE, [userId]);
         if (user.length === 0) return res.status(404).json({ message: 'User not found' });
 
-        if (parseFloat(user[0].wallet_balance) < parseFloat(amount)) {
+        const currentBalance = parseFloat(user[0].wallet_balance);
+        const withdrawAmount = parseFloat(amount);
+
+        if (currentBalance < withdrawAmount) {
             return res.status(400).json({ message: 'Insufficient balance' });
         }
 
+        const balanceBefore = currentBalance;
+        const balanceAfter = currentBalance - withdrawAmount;
+
         // Deduct balance
-        await db.query(QUERIES.USER.UPDATE_BALANCE_DEDUCT, [amount, userId]);
+        await db.query(QUERIES.USER.UPDATE_BALANCE_DEDUCT, [withdrawAmount, userId]);
 
-        // Create Transaction Record
-        await db.query(QUERIES.WALLET.CREATE_TRANSACTION,
-            [userId, 'DEBIT', amount, `Withdrawal Request via ${method}`]);
+        // Record in wallet_transactions (this is what the app reads)
+        await db.query(
+            `INSERT INTO wallet_transactions 
+            (user_id, transaction_type, currency_type, amount, balance_before, balance_after, description) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [userId, 'withdrawal', 'cash', -withdrawAmount, balanceBefore, balanceAfter, `Withdrawal via ${method}: ${details}`]
+        );
 
-        // Create Withdrawal Request
+        // Create Withdrawal Request record
         await db.query(QUERIES.WALLET.CREATE_WITHDRAWAL,
-            [userId, amount, method, details]);
+            [userId, withdrawAmount, method, details]);
 
         res.status(200).json({ message: 'Withdrawal request submitted successfully' });
     } catch (error) {

@@ -61,7 +61,54 @@ async function getOfferwallOffers(req, res) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /offers/:offerId/events?userId=<id>
+// GET /offers/:offerId
+// Returns a single offer with events. Used by OfferDetailScreen.
+// ─────────────────────────────────────────────────────────────────────────────
+async function getOfferById(req, res) {
+    try {
+        const { offerId } = req.params;
+
+        const [offers] = await db.query(
+            `SELECT id, offer_id, offer_name, heading, history_name,
+                    offer_url, tracking_link, amount, currency_type,
+                    event_name, description, image_url, refer_payout, status
+             FROM offers WHERE id = ? LIMIT 1`,
+            [offerId]
+        );
+
+        if (offers.length === 0) {
+            return res.status(404).json({ success: false, message: 'Offer not found' });
+        }
+
+        const offer = offers[0];
+
+        const [events] = await db.query(
+            `SELECT event_id, event_name, points, currency_type, step_order
+             FROM offer_event_steps WHERE offer_id = ? ORDER BY step_order ASC`,
+            [offerId]
+        );
+
+        res.json({
+            success: true,
+            offer: {
+                ...offer,
+                amount: parseFloat(offer.amount) || 0,
+                events: events.map(e => ({
+                    event_id: e.event_id,
+                    event_name: e.event_name,
+                    points: parseFloat(e.points) || 0,
+                    currency_type: e.currency_type || 'cash',
+                    is_completed: false,
+                })),
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching offer by id:', error);
+        res.status(500).json({ success: false, error: 'Failed to fetch offer' });
+    }
+}
+
+
 // Returns the event steps for a single offer. If userId is provided, marks
 // which events the user has already completed.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -293,6 +340,7 @@ async function getAllOffers(req, res) {
 
 module.exports = {
     getOfferwallOffers,
+    getOfferById,
     getOfferEvents,
     createOfferWithEvents,
     updateOfferWithEvents,

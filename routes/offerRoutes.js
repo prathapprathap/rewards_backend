@@ -7,6 +7,9 @@ const offerController = require('../controllers/offerController');
 // GET  /offers/offerwall   – active offers with event milestones
 router.get('/offerwall', offerController.getOfferwallOffers);
 
+// GET  /offers/:offerId    – single offer detail (used by OfferDetailScreen)
+router.get('/:offerId', offerController.getOfferById);
+
 // GET  /offers/:offerId/events?userId=<id>  – per-offer events with completion
 router.get('/:offerId/events', offerController.getOfferEvents);
 
