@@ -542,11 +542,7 @@ exports.redeemPromoCode = async (req, res) => {
 exports.getAppSettings = async (req, res) => {
     try {
         const [settings] = await db.query('SELECT * FROM app_settings');
-        const settingsObj = {};
-        settings.forEach(s => {
-            settingsObj[s.setting_key] = s.setting_value;
-        });
-        return res.status(200).json(settingsObj);
+        return res.status(200).json(settings);
     } catch (error) {
         console.error('Error in getAppSettings:', error);
         return res.status(500).json({ message: 'Server error' });
