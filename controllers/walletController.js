@@ -136,3 +136,23 @@ exports.getLeaderboard = async (req, res) => {
         res.status(500).json({ message: 'Server error' });
     }
 };
+// Get Daily Check-in History (last 30 days)
+exports.getCheckInHistory = async (req, res) => {
+    const { userId } = req.params;
+    try {
+        const [rows] = await db.query(
+            `SELECT DATE(created_at) as date 
+             FROM wallet_transactions 
+             WHERE user_id = ? AND description = 'Daily Check-in Reward'
+             AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+             ORDER BY created_at DESC`,
+            [userId]
+        );
+
+        // Convert to a simple array of dates or just indicate which of last 30 days are done
+        res.status(200).json(rows.map(r => r.date));
+    } catch (error) {
+        console.error('Error fetching check-in history:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};

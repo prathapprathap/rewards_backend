@@ -133,10 +133,16 @@ const initDB = async () => {
       // Ignore if columns already exist
     }
 
-    // Update Offers table to ensure cash is default and simplify enum if needed
-    try {
-      await promisePool.query("ALTER TABLE offers MODIFY COLUMN currency_type VARCHAR(20) DEFAULT 'cash'");
-    } catch (e) { }
+    // Update Offers table migrations
+    const offerMigrations = [
+      "ALTER TABLE offers ADD COLUMN tracking_link VARCHAR(255)",
+      "ALTER TABLE offers ADD COLUMN refer_payout VARCHAR(255)",
+      "ALTER TABLE offers ADD COLUMN currency_type VARCHAR(20) DEFAULT 'cash'",
+      "ALTER TABLE offers MODIFY COLUMN currency_type VARCHAR(20) DEFAULT 'cash'"
+    ];
+    for (const sql of offerMigrations) {
+      try { await promisePool.query(sql); } catch (e) { /* column already exists */ }
+    }
 
     // Create Referrals Tracking Table
     const createReferralsTable = `

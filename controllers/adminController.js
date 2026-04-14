@@ -72,11 +72,7 @@ exports.createOffer = async (req, res) => {
         } = req.body;
 
         const [result] = await connection.query(
-            `INSERT INTO offers
-             (offer_name, offer_id, heading, history_name, offer_url,
-              tracking_link, amount, currency_type, event_name,
-              description, image_url, refer_payout, status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            QUERIES.ADMIN.CREATE_OFFER,
             [offer_name, offer_id, heading, history_name, offer_url,
                 tracking_link, amount, currency_type, event_name,
                 description, image_url, refer_payout, status]
@@ -178,12 +174,7 @@ exports.updateOffer = async (req, res) => {
         } = req.body;
 
         await connection.query(
-            `UPDATE offers SET
-             offer_name = ?, offer_id = ?, heading = ?, history_name = ?,
-             offer_url = ?, tracking_link = ?, amount = ?,
-             currency_type = ?, event_name = ?, description = ?,
-             image_url = ?, refer_payout = ?, status = ?
-             WHERE id = ?`,
+            QUERIES.ADMIN.UPDATE_OFFER,
             [offer_name, offer_id, heading, history_name,
                 offer_url, tracking_link, amount,
                 currency_type, event_name, description,
