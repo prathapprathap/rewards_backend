@@ -206,6 +206,21 @@ const initDB = async () => {
     await promisePool.query(createScratchedOffersTable);
     console.log('Scratched offers table checked/created successfully.');
 
+    const createCheckinsTable = `
+      CREATE TABLE IF NOT EXISTS checkins (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        checkin_date DATE NOT NULL,
+        reward_amount DECIMAL(10, 2) DEFAULT 0,
+        streak_count INT DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        UNIQUE KEY unique_user_date (user_id, checkin_date)
+      )
+    `;
+    await promisePool.query(createCheckinsTable);
+    console.log('Checkins table checked/created successfully.');
+
     const createAppSettingsTable = `
       CREATE TABLE IF NOT EXISTS app_settings (
         id INT AUTO_INCREMENT PRIMARY KEY,

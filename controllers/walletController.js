@@ -173,8 +173,15 @@ exports.dailyCheckIn = async (req, res) => {
             [reward, reward, todayStr, finalStreak, userId]
         );
 
+        // Record Check-in Entry (ALWAYS, even if reward is 0)
+        await db.query(
+            `INSERT IGNORE INTO checkins (user_id, checkin_date, reward_amount, streak_count)
+             VALUES (?, ?, ?, ?)`,
+            [userId, todayStr, reward, finalStreak === 0 ? targetDays : finalStreak]
+        );
+
         if (reward > 0) {
-            // Record Transaction
+            // Record Transaction (Only if money earned)
             await db.query(
                 `INSERT INTO wallet_transactions 
                  (user_id, transaction_type, currency_type, amount, balance_before, balance_after, description) 
@@ -210,11 +217,11 @@ exports.getCheckInHistory = async (req, res) => {
     const { userId } = req.params;
     try {
         const [rows] = await db.query(
-            `SELECT DATE(created_at) as date 
-             FROM wallet_transactions 
-             WHERE user_id = ? AND description = 'Daily Check-in Reward'
-             AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-             ORDER BY created_at DESC`,
+            `SELECT checkin_date as date 
+             FROM checkins 
+             WHERE user_id = ?
+             AND checkin_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+             ORDER BY checkin_date DESC`,
             [userId]
         );
 
