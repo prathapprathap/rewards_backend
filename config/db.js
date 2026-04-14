@@ -49,6 +49,7 @@ const initDB = async () => {
       "ALTER TABLE users ADD COLUMN total_earnings DECIMAL(10,2) DEFAULT 0.00",
       "ALTER TABLE users ADD COLUMN referral_earnings DECIMAL(10,2) DEFAULT 0.00",
       "ALTER TABLE users ADD COLUMN last_checkin_date DATE",
+      "ALTER TABLE users ADD COLUMN checkin_streak INT DEFAULT 0",
     ];
     for (const sql of userMigrations) {
       try { await promisePool.query(sql); } catch (e) { /* column already exists */ }
@@ -270,6 +271,8 @@ const initDB = async () => {
       ['earning_percent', '50', 'General earning percentage multiplier'],
       ['support_email', 'support@rewardmobi.xyz', 'Admin support contact email'],
       ['primary_color', '#6DC000', 'Primary theme color'],
+      ['daily_checkin_reward', '10', 'Base coins earned for daily check-in (if list not used)'],
+      ['daily_checkin_rewards_list', '1,2,3,4,5,10,20', 'Comma-separated rewards for Day 1 to Day 30 streak'],
     ];
 
     for (const [key, value, description] of defaultSettings) {
