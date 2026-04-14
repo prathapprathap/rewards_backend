@@ -99,18 +99,20 @@ exports.dailyCheckIn = async (req, res) => {
         // Fetch reward amount from settings
         // Fetch reward logic from settings
         const [settings] = await db.query(
-            'SELECT setting_key, setting_value FROM app_settings WHERE setting_key IN (?, ?)',
-            ['daily_checkin_reward', 'daily_checkin_rewards_list']
+            'SELECT setting_key, setting_value FROM app_settings WHERE setting_key IN (?, ?, ?, ?)',
+            ['daily_checkin_reward', 'daily_checkin_rewards_list', 'checkin_target_days', 'checkin_target_reward']
         );
         const settingsMap = settings.reduce((acc, s) => {
             acc[s.setting_key] = s.setting_value;
             return acc;
         }, {});
 
+        const targetDays = parseInt(settingsMap['checkin_target_days'] || '30');
+        const targetReward = parseFloat(settingsMap['checkin_target_reward'] || '50');
         const rewardList = settingsMap['daily_checkin_rewards_list']
             ? settingsMap['daily_checkin_rewards_list'].split(',').map(v => parseFloat(v.trim()))
             : [];
-        const baseReward = parseFloat(settingsMap['daily_checkin_reward'] || '10');
+        const baseReward = parseFloat(settingsMap['daily_checkin_reward'] || '0');
 
         const [user] = await db.query('SELECT last_checkin_date, checkin_streak FROM users WHERE id = ?', [userId]);
         if (user.length === 0) return res.status(404).json({ message: 'User not found' });
@@ -144,12 +146,20 @@ exports.dailyCheckIn = async (req, res) => {
             }
         }
 
-        // Determine reward based on streak
-        let CHECKIN_REWARD = baseReward;
-        if (rewardList.length > 0) {
-            // Use streak index (1-based -> 0-based), clamped to list length
+        // Determine reward
+        let reward = 0;
+        let finalStreak = newStreak;
+        let milestoneReached = false;
+
+        if (newStreak >= targetDays) {
+            reward = targetReward;
+            milestoneReached = true;
+            finalStreak = 0; // Reset for next cycle
+        } else if (rewardList.length > 0) {
             const index = Math.min(newStreak - 1, rewardList.length - 1);
-            CHECKIN_REWARD = rewardList[index];
+            reward = rewardList[index];
+        } else {
+            reward = baseReward;
         }
 
         // Update Check-in, Balance and Streak
@@ -160,22 +170,24 @@ exports.dailyCheckIn = async (req, res) => {
                  last_checkin_date = ?, 
                  checkin_streak = ? 
              WHERE id = ?`,
-            [CHECKIN_REWARD, CHECKIN_REWARD, todayStr, newStreak, userId]
+            [reward, reward, todayStr, finalStreak, userId]
         );
 
-        // Record Transaction
-        await db.query(
-            `INSERT INTO wallet_transactions 
-             (user_id, transaction_type, currency_type, amount, balance_before, balance_after, description) 
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [userId, 'checkin', 'cash', CHECKIN_REWARD, 0, 0, 'Daily Check-in Reward']
-        );
-        // Note: balance tracking in transactions table might need a subquery or separate fetch if we really want it accurate there, but for now this works.
+        if (reward > 0) {
+            // Record Transaction
+            await db.query(
+                `INSERT INTO wallet_transactions 
+                 (user_id, transaction_type, currency_type, amount, balance_before, balance_after, description) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                [userId, milestoneReached ? 'milestone' : 'checkin', 'cash', reward, 0, 0, milestoneReached ? `Check-in Milestone (${targetDays} Days)` : 'Daily Check-in Reward']
+            );
+        }
 
         res.status(200).json({
-            message: 'Check-in successful',
-            reward: CHECKIN_REWARD,
-            streak: newStreak
+            message: milestoneReached ? `CONGRATULATIONS! You completed ${targetDays} days streak!` : 'Check-in successful',
+            reward: reward,
+            streak: finalStreak,
+            milestoneReached: milestoneReached
         });
     } catch (error) {
         console.error('Error daily check-in:', error);

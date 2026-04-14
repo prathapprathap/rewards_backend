@@ -271,8 +271,11 @@ const initDB = async () => {
       ['earning_percent', '50', 'General earning percentage multiplier'],
       ['support_email', 'support@rewardmobi.xyz', 'Admin support contact email'],
       ['primary_color', '#6DC000', 'Primary theme color'],
+      ['secondary_color', '#386B01', 'Secondary theme color'],
       ['daily_checkin_reward', '10', 'Base coins earned for daily check-in (if list not used)'],
-      ['daily_checkin_rewards_list', '1,2,3,4,5,10,20', 'Comma-separated rewards for Day 1 to Day 30 streak'],
+      ['daily_checkin_rewards_list', '0,0,0,0,0,0,0', 'Comma-separated rewards (set to 0 for milestone-only)'],
+      ['checkin_target_days', '30', 'Days needed for the big reward'],
+      ['checkin_target_reward', '50', 'Reward for completing the target streak'],
     ];
 
     for (const [key, value, description] of defaultSettings) {
