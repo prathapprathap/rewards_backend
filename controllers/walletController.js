@@ -155,11 +155,8 @@ exports.dailyCheckIn = async (req, res) => {
             reward = targetReward;
             milestoneReached = true;
             finalStreak = 0; // Reset for next cycle
-        } else if (rewardList.length > 0) {
-            const index = Math.min(newStreak - 1, rewardList.length - 1);
-            reward = rewardList[index];
         } else {
-            reward = baseReward;
+            reward = 0; // Each day does NOT have rewards per user request
         }
 
         // Update Check-in, Balance and Streak
