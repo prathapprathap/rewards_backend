@@ -271,7 +271,6 @@ const initDB = async () => {
       ['earning_percent', '50', 'General earning percentage multiplier'],
       ['support_email', 'support@rewardmobi.xyz', 'Admin support contact email'],
       ['primary_color', '#6DC000', 'Primary theme color'],
-      ['secondary_color', '#386B01', 'Secondary theme color'],
       ['daily_checkin_reward', '10', 'Base coins earned for daily check-in (if list not used)'],
       ['daily_checkin_rewards_list', '0,0,0,0,0,0,0', 'Comma-separated rewards (set to 0 for milestone-only)'],
       ['checkin_target_days', '30', 'Days needed for the big reward'],
