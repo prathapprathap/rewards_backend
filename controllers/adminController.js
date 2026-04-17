@@ -288,19 +288,45 @@ exports.updateWithdrawalStatus = async (req, res) => {
 
         // If rejected, refund the amount
         if (status === 'REJECTED') {
-            const [withdrawal] = await db.query(QUERIES.ADMIN.GET_WITHDRAWAL_BY_ID, [id]);
-            if (withdrawal.length > 0) {
-                const { user_id, amount } = withdrawal[0];
-                await db.query(QUERIES.USER.UPDATE_BALANCE_ADD, [amount, user_id]);
-                await db.query(QUERIES.WALLET.CREATE_TRANSACTION,
-                    [user_id, 'CREDIT', amount, 'Withdrawal Refund']);
+            const [withdrawalRows] = await db.query(QUERIES.ADMIN.GET_WITHDRAWAL_BY_ID, [id]);
+            if (withdrawalRows.length > 0) {
+                const { user_id, amount } = withdrawalRows[0];
+                const refundAmount = parseFloat(amount);
+
+                // Fetch current balance for accurate transaction logging
+                const [userRows] = await db.query(QUERIES.USER.GET_WALLET_BALANCE, [user_id]);
+                const balanceBefore = parseFloat(userRows[0]?.wallet_balance || 0);
+                const balanceAfter = balanceBefore + refundAmount;
+
+                // Refund to main balance
+                await db.query(QUERIES.USER.UPDATE_BALANCE_ADD, [refundAmount, user_id]);
+
+                // Record in transactions (using all 7 required fields)
+                await db.query(
+                    QUERIES.WALLET.CREATE_TRANSACTION,
+                    [
+                        user_id,
+                        'refund',
+                        'cash',
+                        refundAmount,
+                        balanceBefore,
+                        balanceAfter,
+                        `Withdrawal Rejected (Refund): Request #${id}`
+                    ]
+                );
+
+                // Refund to breakdown ledger
+                await db.query(
+                    'UPDATE user_wallet_breakdown SET cash = cash + ? WHERE user_id = ?',
+                    [refundAmount, user_id]
+                );
             }
         }
 
         res.status(200).json({ message: 'Withdrawal status updated' });
     } catch (error) {
         console.error('Error updating withdrawal:', error);
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ message: 'Server error: ' + error.message });
     }
 };
 
