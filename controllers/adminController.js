@@ -63,7 +63,7 @@ exports.createOffer = async (req, res) => {
         await connection.beginTransaction();
 
         const {
-            offer_name, offer_id, heading, history_name = '',
+            offer_name, offer_id, side_label = '', heading, history_name = '',
             offer_url, tracking_link = '', amount,
             currency_type = 'cash', event_name = '',
             description = '', image_url = '',
@@ -73,7 +73,7 @@ exports.createOffer = async (req, res) => {
 
         const [result] = await connection.query(
             QUERIES.ADMIN.CREATE_OFFER,
-            [offer_name, offer_id, heading, history_name, offer_url,
+            [offer_name, offer_id, side_label, heading, history_name, offer_url,
                 tracking_link, amount, currency_type, event_name,
                 description, image_url, refer_payout, status]
         );
@@ -165,7 +165,7 @@ exports.updateOffer = async (req, res) => {
 
         const { id } = req.params;
         const {
-            offer_name, offer_id, heading, history_name = '',
+            offer_name, offer_id, side_label = '', heading, history_name = '',
             offer_url, tracking_link = '', amount,
             currency_type = 'cash', event_name = '',
             description = '', image_url = '',
@@ -175,7 +175,7 @@ exports.updateOffer = async (req, res) => {
 
         await connection.query(
             QUERIES.ADMIN.UPDATE_OFFER,
-            [offer_name, offer_id, heading, history_name,
+            [offer_name, offer_id, side_label, heading, history_name,
                 offer_url, tracking_link, amount,
                 currency_type, event_name, description,
                 image_url, refer_payout, status, id]

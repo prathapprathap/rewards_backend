@@ -28,9 +28,9 @@ module.exports = {
         CREATE_TASK: 'INSERT INTO tasks (title, description, reward_coins, icon_color, action_url) VALUES (?, ?, ?, ?, ?)',
         DELETE_TASK: 'DELETE FROM tasks WHERE id = ?',
         CREATE_OFFER: `INSERT INTO offers (
-        offer_name, offer_id, heading, history_name, offer_url, tracking_link, 
+        offer_name, offer_id, side_label, heading, history_name, offer_url, tracking_link, 
         amount, currency_type, event_name, description, image_url, refer_payout, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         GET_ALL_OFFERS: `
           SELECT o.*, 
                  (SELECT COUNT(*) FROM offer_event_steps  WHERE offer_id = o.id) as event_count,
@@ -62,7 +62,7 @@ module.exports = {
         DELETE_OFFER: 'DELETE FROM offers WHERE id = ?',
         DELETE_USER: 'DELETE FROM users WHERE id = ?',
         UPDATE_OFFER: `UPDATE offers SET 
-            offer_name = ?, offer_id = ?, heading = ?, history_name = ?, offer_url = ?, tracking_link = ?,
+            offer_name = ?, offer_id = ?, side_label = ?, heading = ?, history_name = ?, offer_url = ?, tracking_link = ?,
             amount = ?, currency_type = ?, event_name = ?, description = ?, image_url = ?, refer_payout = ?, status = ? 
             WHERE id = ?`,
         UPDATE_PROMOCODE: 'UPDATE promocodes SET code = ?, amount = ?, users_limit = ?, for_whom = ?, status = ? WHERE id = ?',

@@ -77,6 +77,7 @@ const initDB = async () => {
         id INT AUTO_INCREMENT PRIMARY KEY,
         offer_name VARCHAR(255) NOT NULL,
         offer_id VARCHAR(255),
+        side_label VARCHAR(100),
         heading VARCHAR(255),
         history_name VARCHAR(255),
         offer_url VARCHAR(255),
@@ -137,6 +138,7 @@ const initDB = async () => {
 
     // Update Offers table migrations
     const offerMigrations = [
+      "ALTER TABLE offers ADD COLUMN side_label VARCHAR(100)",
       "ALTER TABLE offers ADD COLUMN tracking_link VARCHAR(255)",
       "ALTER TABLE offers ADD COLUMN refer_payout VARCHAR(255)",
       "ALTER TABLE offers ADD COLUMN currency_type VARCHAR(20) DEFAULT 'cash'",
@@ -282,6 +284,7 @@ const initDB = async () => {
       ['whatsapp_link', 'https://whatsapp.com/channel/...', 'WhatsApp channel link'],
       ['support_email', 'support@rewardmobi.xyz', 'Admin support contact email'],
       ['primary_color', '#6DC000', 'Primary theme color'],
+      ['wallet_symbol_image_url', '', 'Global wallet symbol image URL used across the app'],
       ['checkin_target_days', '30', 'Days needed for the big reward'],
       ['checkin_target_reward', '50', 'Reward for completing the target streak'],
       ['payment_mode', 'Manual', 'Withdrawal payment mode (Manual/Automatic)'],

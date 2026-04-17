@@ -9,7 +9,7 @@ async function getOfferwallOffers(req, res) {
     try {
         // Fetch all active offers
         const [offers] = await db.query(
-            `SELECT id, offer_id, offer_name, heading, history_name,
+            `SELECT id, offer_id, offer_name, side_label, heading, history_name,
                     offer_url, tracking_link, amount, currency_type,
                     event_name, description, image_url, status
              FROM offers
@@ -69,7 +69,7 @@ async function getOfferById(req, res) {
         const { offerId } = req.params;
 
         const [offers] = await db.query(
-            `SELECT id, offer_id, offer_name, heading, history_name,
+            `SELECT id, offer_id, offer_name, side_label, heading, history_name,
                     offer_url, tracking_link, amount, currency_type,
                     event_name, description, image_url, refer_payout, status
              FROM offers WHERE id = ? LIMIT 1`,
@@ -181,7 +181,7 @@ async function createOfferWithEvents(req, res) {
         await connection.beginTransaction();
 
         const {
-            offer_name, offer_id, heading, history_name = '',
+            offer_name, offer_id, side_label = '', heading, history_name = '',
             offer_url, tracking_link = '', amount,
             currency_type = 'cash', event_name = '',
             description = '', image_url = '',
@@ -197,11 +197,11 @@ async function createOfferWithEvents(req, res) {
         // Insert offer
         const [offerResult] = await connection.query(
             `INSERT INTO offers
-             (offer_name, offer_id, heading, history_name, offer_url,
+             (offer_name, offer_id, side_label, heading, history_name, offer_url,
               tracking_link, amount, currency_type, event_name,
               description, image_url, refer_payout, status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [offer_name, offer_id, heading, history_name, offer_url,
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [offer_name, offer_id, side_label, heading, history_name, offer_url,
                 tracking_link, amount, currency_type, event_name,
                 description, image_url, refer_payout, status]
         );
@@ -255,7 +255,7 @@ async function updateOfferWithEvents(req, res) {
 
         const { id } = req.params;
         const {
-            offer_name, offer_id, heading, history_name,
+            offer_name, offer_id, side_label = '', heading, history_name,
             offer_url, tracking_link, amount,
             currency_type, event_name, description,
             image_url, refer_payout, status,
@@ -264,12 +264,12 @@ async function updateOfferWithEvents(req, res) {
 
         await connection.query(
             `UPDATE offers SET
-             offer_name = ?, offer_id = ?, heading = ?, history_name = ?,
+             offer_name = ?, offer_id = ?, side_label = ?, heading = ?, history_name = ?,
              offer_url = ?, tracking_link = ?, amount = ?,
              currency_type = ?, event_name = ?, description = ?,
              image_url = ?, refer_payout = ?, status = ?
              WHERE id = ?`,
-            [offer_name, offer_id, heading, history_name,
+            [offer_name, offer_id, side_label, heading, history_name,
                 offer_url, tracking_link, amount,
                 currency_type, event_name, description,
                 image_url, refer_payout, status, id]
