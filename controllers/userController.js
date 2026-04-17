@@ -204,6 +204,91 @@ exports.updatePayoutDetails = async (req, res) => {
     }
 };
 
+exports.applyReferralCode = async (req, res) => {
+    const { userId } = req.params;
+    const { referral_code } = req.body;
+
+    if (!referral_code || !referral_code.toString().trim()) {
+        return res.status(400).json({ message: 'Referral code is required' });
+    }
+
+    const normalizedCode = referral_code.toString().trim().toUpperCase();
+    const connection = await db.getConnection();
+
+    try {
+        await connection.beginTransaction();
+
+        const [userRows] = await connection.query(
+            'SELECT id, referral_code, referred_by FROM users WHERE id = ? LIMIT 1',
+            [userId]
+        );
+
+        if (userRows.length === 0) {
+            await connection.rollback();
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        const user = userRows[0];
+
+        if (user.referred_by && user.referred_by.toString().trim().isNotEmpty) {
+            await connection.rollback();
+            return res.status(400).json({ message: 'Referral code already applied for this account' });
+        }
+
+        if ((user.referral_code || '').toString().toUpperCase() === normalizedCode) {
+            await connection.rollback();
+            return res.status(400).json({ message: 'You cannot use your own referral code' });
+        }
+
+        const [referrerRows] = await connection.query(
+            'SELECT id, referral_code, name FROM users WHERE UPPER(referral_code) = ? LIMIT 1',
+            [normalizedCode]
+        );
+
+        if (referrerRows.length === 0) {
+            await connection.rollback();
+            return res.status(404).json({ message: 'Invalid referral code' });
+        }
+
+        const referrer = referrerRows[0];
+
+        const [existingReferral] = await connection.query(
+            'SELECT id FROM referrals WHERE referred_user_id = ? LIMIT 1',
+            [userId]
+        );
+
+        if (existingReferral.length > 0) {
+            await connection.rollback();
+            return res.status(400).json({ message: 'Referral already linked for this account' });
+        }
+
+        await connection.query(
+            'UPDATE users SET referred_by = ? WHERE id = ?',
+            [referrer.referral_code, userId]
+        );
+
+        await connection.query(
+            'INSERT INTO referrals (referrer_id, referred_user_id, status, commission_earned) VALUES (?, ?, ?, ?)',
+            [referrer.id, userId, 'PENDING', 0]
+        );
+
+        await connection.commit();
+
+        return res.status(200).json({
+            success: true,
+            message: 'Referral code applied successfully',
+            referred_by: referrer.referral_code,
+            referrer_name: referrer.name || null
+        });
+    } catch (error) {
+        await connection.rollback();
+        console.error('Error applying referral code:', error);
+        return res.status(500).json({ message: 'Server error' });
+    } finally {
+        connection.release();
+    }
+};
+
 // Get offers with scratch status for a specific user
 exports.getUserOffers = async (req, res) => {
     const { userId } = req.params;
