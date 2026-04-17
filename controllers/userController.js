@@ -97,6 +97,46 @@ exports.loginWithGoogle = async (req, res) => {
                 [userId, bonusSpins, bonusSpins]
             );
 
+            // --- SIGNUP BONUS LOGIC (Centralized Conversion) ---
+            const [settings] = await db.query(
+                'SELECT setting_key, setting_value FROM app_settings WHERE setting_key IN (?, ?, ?)',
+                ['signup_bonus_cash', 'signup_bonus_coins', 'coin_rate']
+            );
+            const settingsMap = settings.reduce((acc, s) => {
+                acc[s.setting_key] = s.setting_value;
+                return acc;
+            }, {});
+
+            const cashBonus = parseFloat(settingsMap.signup_bonus_cash || '0');
+            const coinBonus = parseFloat(settingsMap.signup_bonus_coins || '0');
+            const coinRateValue = parseFloat(settingsMap.coin_rate || '100');
+            const totalBonusConverted = cashBonus + (coinBonus / coinRateValue);
+
+            if (totalBonusConverted > 0) {
+                // Initialize wallet breakdown (Deeper ledger)
+                await db.query(
+                    `INSERT INTO user_wallet_breakdown (user_id, cash) 
+                     VALUES (?, ?)
+                     ON DUPLICATE KEY UPDATE cash = cash + ?`,
+                    [userId, totalBonusConverted, totalBonusConverted]
+                );
+
+                // Update main user balance (Always stored in Cash/Rupees)
+                await db.query(
+                    'UPDATE users SET wallet_balance = wallet_balance + ?, total_earnings = total_earnings + ? WHERE id = ?',
+                    [totalBonusConverted, totalBonusConverted, userId]
+                );
+
+                // Record detailed transaction for history screen
+                await db.query(
+                    `INSERT INTO wallet_transactions 
+                     (user_id, transaction_type, currency_type, amount, balance_before, balance_after, description) 
+                     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                    [userId, 'signup_bonus', 'cash', totalBonusConverted, 0, totalBonusConverted, `Signup bonus: ${coinBonus} Coins + ₹${cashBonus}`]
+                );
+            }
+            // --------------------------------------------------------
+
             const newUser = {
                 id: userId,
                 google_id,
@@ -104,8 +144,8 @@ exports.loginWithGoogle = async (req, res) => {
                 name,
                 profile_pic,
                 device_id,
-                wallet_balance: 0.00,
-                total_earnings: 0.00,
+                wallet_balance: totalBonusConverted,
+                total_earnings: totalBonusConverted,
                 referral_code: newReferralCode,
                 referred_by: referral_code || null
             };
@@ -113,7 +153,9 @@ exports.loginWithGoogle = async (req, res) => {
             return res.status(201).json({
                 message: 'User registered successfully',
                 user: newUser,
-                bonus_spins: bonusSpins
+                bonus_spins: bonusSpins,
+                signup_bonus_cash: cashBonus,
+                signup_bonus_coins: coinBonus
             });
         }
     } catch (error) {
@@ -145,6 +187,19 @@ exports.getUserProfile = async (req, res) => {
         }
     } catch (error) {
         console.error('Error in getUserProfile:', error);
+        return res.status(500).json({ message: 'Server error' });
+    }
+};
+
+exports.updatePayoutDetails = async (req, res) => {
+    const { userId } = req.params;
+    const { upi_id } = req.body;
+
+    try {
+        await db.query('UPDATE users SET upi_id = ? WHERE id = ?', [upi_id, userId]);
+        return res.status(200).json({ message: 'Payout details updated successfully' });
+    } catch (error) {
+        console.error('Error in updatePayoutDetails:', error);
         return res.status(500).json({ message: 'Server error' });
     }
 };

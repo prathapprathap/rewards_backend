@@ -71,8 +71,13 @@ module.exports = {
         UPDATE_ADMIN_PASSWORD: 'UPDATE admin_info SET password = ? WHERE id = 1',
     },
     WALLET: {
-        GET_TRANSACTIONS: 'SELECT * FROM transactions WHERE user_id = ? ORDER BY created_at DESC',
-        CREATE_TRANSACTION: 'INSERT INTO transactions (user_id, type, amount, description) VALUES (?, ?, ?, ?)',
+        GET_TRANSACTIONS: `
+            SELECT wt.*, o.image_url as offer_image, o.offer_name 
+            FROM wallet_transactions wt 
+            LEFT JOIN offers o ON wt.offer_id = o.id 
+            WHERE wt.user_id = ? 
+            ORDER BY wt.created_at DESC`,
+        CREATE_TRANSACTION: 'INSERT INTO wallet_transactions (user_id, transaction_type, currency_type, amount, balance_before, balance_after, description) VALUES (?, ?, ?, ?, ?, ?, ?)',
         CREATE_WITHDRAWAL: 'INSERT INTO withdrawals (user_id, amount, method, details) VALUES (?, ?, ?, ?)',
     }
 };

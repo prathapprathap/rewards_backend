@@ -12,6 +12,7 @@ router.post('/promo/:userId/redeem', userController.redeemPromoCode);
 router.get('/:userId/referral-stats', referralController.getReferralStats);
 router.post('/:userId/scratch-offer', userController.scratchOffer);
 router.get('/:userId/offers', userController.getUserOffers);
+router.put('/:userId/payout', userController.updatePayoutDetails);
 
 // ── Dynamic :id routes LAST ───────────────────────────────────────────────────
 router.get('/:id', userController.getUserProfile);

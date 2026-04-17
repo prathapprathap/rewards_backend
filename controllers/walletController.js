@@ -7,12 +7,14 @@ exports.getWalletInfo = async (req, res) => {
     try {
         const [user] = await db.query(QUERIES.USER.GET_WALLET_INFO, [userId]);
         const [transactions] = await db.query(QUERIES.WALLET.GET_TRANSACTIONS, [userId]);
+        const [breakdown] = await db.query('SELECT cash FROM user_wallet_breakdown WHERE user_id = ?', [userId]);
 
         if (user.length === 0) return res.status(404).json({ message: 'User not found' });
 
         res.status(200).json({
             balance: user[0].wallet_balance,
             totalEarnings: user[0].total_earnings,
+            cash: breakdown[0]?.cash || 0.00,
             transactions
         });
     } catch (error) {
@@ -21,17 +23,61 @@ exports.getWalletInfo = async (req, res) => {
     }
 };
 
-// Request Withdrawal
+// Request Withdrawal (Enhanced with Reference Project requirements)
 exports.requestWithdrawal = async (req, res) => {
     const { userId, amount, method, details } = req.body;
 
     try {
-        // Check balance
+        // 1. Get App Settings
+        const [settings] = await db.query(
+            'SELECT setting_key, setting_value FROM app_settings WHERE setting_key IN (?, ?)',
+            ['min_withdrawal', 'withdrawal_daily_limit']
+        );
+        const settingsMap = settings.reduce((acc, s) => {
+            acc[s.setting_key] = s.setting_value;
+            return acc;
+        }, { min_withdrawal: '100', withdrawal_daily_limit: '2' });
+
+        const minWithdrawal = parseFloat(settingsMap.min_withdrawal);
+        const dailyLimit = parseInt(settingsMap.withdrawal_daily_limit);
+
+        // 2. Security Check: Must have completed at least 1 unique offer (Legacy parity)
+        const [offerCompletions] = await db.query(
+            "SELECT COUNT(DISTINCT offer_id) as count FROM offer_events WHERE user_id = ? AND status = 'approved'",
+            [userId]
+        );
+        if (offerCompletions[0].count === 0) {
+            return res.status(403).json({ message: 'Please complete at least 1 offer before withdrawing.' });
+        }
+
+        // 3. Daily Limit Check
+        const [todayWithdrawals] = await db.query(
+            "SELECT COUNT(*) as count FROM withdrawals WHERE user_id = ? AND DATE(created_at) = CURDATE()",
+            [userId]
+        );
+        if (todayWithdrawals[0].count >= dailyLimit) {
+            return res.status(403).json({ message: `Daily withdrawal limit reached (${dailyLimit}).` });
+        }
+
+        // 4. Pending Check (Prevent multiple pending requests)
+        const [pendingWithdrawals] = await db.query(
+            "SELECT id FROM withdrawals WHERE user_id = ? AND status = 'PENDING'",
+            [userId]
+        );
+        if (pendingWithdrawals.length > 0) {
+            return res.status(400).json({ message: 'You already have a pending withdrawal request.' });
+        }
+
+        // 5. Balance Check
         const [user] = await db.query(QUERIES.USER.GET_WALLET_BALANCE, [userId]);
         if (user.length === 0) return res.status(404).json({ message: 'User not found' });
 
         const currentBalance = parseFloat(user[0].wallet_balance);
         const withdrawAmount = parseFloat(amount);
+
+        if (withdrawAmount < minWithdrawal) {
+            return res.status(400).json({ message: `Minimum withdrawal amount is ₹${minWithdrawal}` });
+        }
 
         if (currentBalance < withdrawAmount) {
             return res.status(400).json({ message: 'Insufficient balance' });
@@ -40,10 +86,11 @@ exports.requestWithdrawal = async (req, res) => {
         const balanceBefore = currentBalance;
         const balanceAfter = currentBalance - withdrawAmount;
 
+        // 6. TRUNCATED TRANSACTIONAL ATTEMPT (Using direct queries for safety)
         // Deduct balance
         await db.query(QUERIES.USER.UPDATE_BALANCE_DEDUCT, [withdrawAmount, userId]);
 
-        // Record in wallet_transactions (this is what the app reads)
+        // Record in wallet_transactions
         await db.query(
             `INSERT INTO wallet_transactions 
             (user_id, transaction_type, currency_type, amount, balance_before, balance_after, description) 
@@ -51,11 +98,20 @@ exports.requestWithdrawal = async (req, res) => {
             [userId, 'withdrawal', 'cash', -withdrawAmount, balanceBefore, balanceAfter, `Withdrawal via ${method}: ${details}`]
         );
 
+        // Update user_wallet_breakdown (Deduct cash)
+        await db.query(
+            'UPDATE user_wallet_breakdown SET cash = cash - ? WHERE user_id = ? AND cash >= ?',
+            [withdrawAmount, userId, withdrawAmount]
+        );
+
         // Create Withdrawal Request record
         await db.query(QUERIES.WALLET.CREATE_WITHDRAWAL,
             [userId, withdrawAmount, method, details]);
 
-        res.status(200).json({ message: 'Withdrawal request submitted successfully' });
+        res.status(200).json({
+            message: 'Withdrawal request submitted successfully! It will be processed within 24 hours.',
+            newBalance: balanceAfter
+        });
     } catch (error) {
         console.error('Error requesting withdrawal:', error);
         res.status(500).json({ message: 'Server error' });

@@ -65,25 +65,38 @@ async function trackClick(req, res) {
         // Track device fingerprint
         await trackDeviceFingerprint(userId, deviceId, ipAddress, userAgent);
 
-        // Generate tracking URL with macros
-        // Priority: tracking_link (Offer18 URL with {clickid}) > offer_url (generic destination)
-        const trackingUrl = offer.tracking_link || offer.offer18_tracking_url || offer.offer_url || offer.tracking_url;
+        // Priority: tracking_link (Offer18 URL with {clickid}) > offer18_tracking_url > offer_url
+        let trackingUrl = offer.tracking_link || offer.offer18_tracking_url || offer.offer_url || offer.tracking_url;
 
         if (!trackingUrl) {
-            console.log('No tracking URL found for offer:', offer.id, offer);
+            console.log('No tracking URL found for offer:', offer.id);
             return res.status(400).json({ error: 'No tracking URL configured for this offer', trackingUrl: null });
         }
 
-        console.log('Using tracking URL:', trackingUrl);
+        // --- URL SANITIZATION & AUTO-APPENDING (Matching reference project needs) ---
+        // 1. Ensure protocol exists
+        if (!trackingUrl.startsWith('http')) {
+            trackingUrl = 'https://' + trackingUrl;
+        }
 
-        const finalUrl = trackingUrl
+        // 2. Replacements
+        let finalUrl = trackingUrl
             .replace('{clickid}', clickId)
             .replace('{click_id}', clickId)
-            .replace('{cid}', clickId)           // Offer18 click ID macro (rupitask.xyz/o/?cid=)
+            .replace('{cid}', clickId)           // Offer18 click ID macro
             .replace('{p1}', clickId)             // Offer18 Affiliate Click ID macro
             .replace('{user_id}', userId)
-            .replace('{uid}', userId)             // alternate user ID macro
             .replace('{offer_id}', offerId);
+
+        // 3. Auto-append click_id if no replacement happened (Important for legacy redirect scripts)
+        // If the URL is just a generic link without macros, we MUST append the tracking param
+        if (finalUrl === trackingUrl) {
+            const separator = finalUrl.includes('?') ? '&' : '?';
+            // Use 'p1' as the primary tracking parameter (compatible with Offer18 and custom scripts)
+            finalUrl += `${separator}p1=${clickId}&p2=${userId}&offerId=${offerId}`;
+        }
+
+        console.log('🚀 Navigating to Tracking URL:', finalUrl);
 
         res.json({
             success: true,
@@ -333,40 +346,44 @@ async function handlePostback(req, res) {
 }
 
 // Credit user wallet with multiple currency support
-async function creditUserWallet(userId, amount, currencyType = 'cash', offerId, eventId) {
+async function creditUserWallet(userId, amount, currencyType, offerId, eventId) {
     try {
-        // Initialize wallet breakdown if not exists
-        await db.query(
-            `INSERT INTO user_wallet_breakdown (user_id, cash) 
-            VALUES (?, 0) 
-            ON DUPLICATE KEY UPDATE user_id = user_id`,
-            [userId]
+        // 1. Fetch coin rate from settings
+        const [settings] = await db.query(
+            'SELECT setting_value FROM app_settings WHERE setting_key = ?',
+            ['coin_rate']
         );
+        const coinRate = parseFloat(settings[0]?.setting_value || '100');
 
-        // Get current balance
-        const [wallets] = await db.query(
-            'SELECT * FROM user_wallet_breakdown WHERE user_id = ?',
-            [userId]
-        );
-        const wallet = wallets[0] || { cash: 0 };
-        const balanceBefore = parseFloat(wallet[currencyType]) || 0;
-        const balanceAfter = balanceBefore + parseFloat(amount);
-
-        // Update wallet breakdown
-        await db.query(
-            `UPDATE user_wallet_breakdown SET ${currencyType} = ? WHERE user_id = ?`,
-            [balanceAfter, userId]
-        );
-
-        // Update main wallet (cash only)
-        if (currencyType === 'cash') {
-            await db.query(
-                'UPDATE users SET wallet_balance = wallet_balance + ?, total_earnings = total_earnings + ? WHERE id = ?',
-                [amount, amount, userId]
-            );
+        // 2. Determine cash value
+        let cashAmount = parseFloat(amount);
+        if (currencyType === 'coins') {
+            cashAmount = cashAmount / coinRate;
+        } else if (currencyType === 'gems') {
+            // Assume gems are 1:1 for now or add a gem rate later
+            cashAmount = cashAmount;
         }
 
-        // Record transaction
+        // Check if user exists
+        const [user] = await db.query('SELECT wallet_balance FROM users WHERE id = ?', [userId]);
+        if (user.length === 0) return;
+
+        const balanceBefore = parseFloat(user[0].wallet_balance);
+        const balanceAfter = balanceBefore + cashAmount;
+
+        // 3. Update main wallet (Always Rupees/Cash)
+        await db.query(
+            'UPDATE users SET wallet_balance = ?, total_earnings = total_earnings + ? WHERE id = ?',
+            [balanceAfter, cashAmount, userId]
+        );
+
+        // 4. Update breakdown (Ensure table keeps track of total cash from all sources)
+        await db.query(
+            'INSERT INTO user_wallet_breakdown (user_id, cash) VALUES (?, ?) ON DUPLICATE KEY UPDATE cash = cash + ?',
+            [userId, cashAmount, cashAmount]
+        );
+
+        // 5. Record transaction
         await db.query(
             `INSERT INTO wallet_transactions 
             (user_id, transaction_type, currency_type, amount, balance_before, balance_after, offer_id, event_id, description) 
@@ -375,16 +392,16 @@ async function creditUserWallet(userId, amount, currencyType = 'cash', offerId, 
                 userId,
                 'offer_reward',
                 currencyType,
-                amount,
+                currencyType === 'coins' ? amount : cashAmount, // Log the original unit
                 balanceBefore,
                 balanceAfter,
                 offerId,
                 eventId,
-                `Offer reward: ${currencyType} ${amount}`
+                `Offer compensation: ${amount} ${currencyType} (₹${cashAmount.toFixed(2)})`
             ]
         );
 
-        console.log(`💰 Credited ${amount} ${currencyType} to user ${userId}`);
+        console.log(`💰 Credited ₹${cashAmount.toFixed(2)} (${amount} ${currencyType}) to user ${userId}`);
 
     } catch (error) {
         console.error('Error crediting wallet:', error);

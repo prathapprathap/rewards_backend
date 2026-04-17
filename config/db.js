@@ -50,6 +50,7 @@ const initDB = async () => {
       "ALTER TABLE users ADD COLUMN referral_earnings DECIMAL(10,2) DEFAULT 0.00",
       "ALTER TABLE users ADD COLUMN last_checkin_date DATE",
       "ALTER TABLE users ADD COLUMN checkin_streak INT DEFAULT 0",
+      "ALTER TABLE users ADD COLUMN upi_id VARCHAR(255)",
     ];
     for (const sql of userMigrations) {
       try { await promisePool.query(sql); } catch (e) { /* column already exists */ }
@@ -277,7 +278,9 @@ const initDB = async () => {
       ['payment_mode', 'Manual', 'Withdrawal payment mode (Manual/Automatic)'],
       ['update_mode', 'Off', 'App update mode'],
       ['maintenance_mode', 'Off', 'System maintenance mode status'],
-      ['social_media_links', 'https://t.me/Rewardmobi,https://whatsapp.com', 'Social links (comma separated)'],
+      ['social_media_links', '', 'JSON formatted social links'],
+      ['telegram_link', 'https://t.me/rewardmobi', 'Telegram channel link'],
+      ['whatsapp_link', 'https://whatsapp.com/channel/...', 'WhatsApp channel link'],
       ['refer_text', 'When your referred friends signup they will get up to 10 Coins...', 'Text shown for referral invites'],
       ['signup_bonus', '5', 'Initial bonus coins for signing up'],
       ['per_refer_amount', '5', 'Coins earned per successful referral'],
@@ -290,6 +293,7 @@ const initDB = async () => {
       ['daily_checkin_rewards_list', '0,0,0,0,0,0,0', 'Comma-separated rewards (set to 0 for milestone-only)'],
       ['checkin_target_days', '30', 'Days needed for the big reward'],
       ['checkin_target_reward', '50', 'Reward for completing the target streak'],
+      ['coin_rate', '100', 'Conversion rate (e.g. 100 coins = ₹1)'],
     ];
 
     for (const [key, value, description] of defaultSettings) {
