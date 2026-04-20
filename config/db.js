@@ -437,11 +437,18 @@ const initDB = async () => {
         offer_id INT,
         event_id INT,
         description TEXT,
+        status VARCHAR(50) DEFAULT 'success', -- success, pending, rejected
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )
     `;
     await promisePool.query(createWalletTransactionsTable);
+
+    // Add status and withdrawal_id columns if they don't exist (for existing tables)
+    try {
+      await promisePool.query("ALTER TABLE wallet_transactions ADD COLUMN status VARCHAR(50) DEFAULT 'success' AFTER description");
+      await promisePool.query("ALTER TABLE wallet_transactions ADD COLUMN withdrawal_id INT AFTER event_id");
+    } catch (e) { }
 
     // Ensure transaction_type and currency_type are VARCHAR and not ENUM (to allow 'promo', 'signup_bonus', etc.)
     try {

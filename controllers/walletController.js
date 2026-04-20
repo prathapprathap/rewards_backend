@@ -87,15 +87,21 @@ exports.requestWithdrawal = async (req, res) => {
         const balanceAfter = currentBalance - withdrawAmount;
 
         // 6. TRUNCATED TRANSACTIONAL ATTEMPT (Using direct queries for safety)
+
+        // Create Withdrawal Request record first to get ID
+        const [withdrawalResult] = await db.query(QUERIES.WALLET.CREATE_WITHDRAWAL,
+            [userId, withdrawAmount, method, details]);
+        const withdrawalId = withdrawalResult.insertId;
+
         // Deduct balance
         await db.query(QUERIES.USER.UPDATE_BALANCE_DEDUCT, [withdrawAmount, userId]);
 
-        // Record in wallet_transactions
+        // Record in wallet_transactions linked to withdrawalId
         await db.query(
             `INSERT INTO wallet_transactions 
-            (user_id, transaction_type, currency_type, amount, balance_before, balance_after, description) 
-            VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [userId, 'withdrawal', 'cash', -withdrawAmount, balanceBefore, balanceAfter, `Withdrawal via ${method}: ${details}`]
+            (user_id, transaction_type, currency_type, amount, balance_before, balance_after, description, status, withdrawal_id) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [userId, 'withdrawal', 'cash', -withdrawAmount, balanceBefore, balanceAfter, `Withdrawal via ${method}: ${details}`, 'pending', withdrawalId]
         );
 
         // Update user_wallet_breakdown (Deduct cash)
@@ -104,13 +110,10 @@ exports.requestWithdrawal = async (req, res) => {
             [withdrawAmount, userId, withdrawAmount]
         );
 
-        // Create Withdrawal Request record
-        await db.query(QUERIES.WALLET.CREATE_WITHDRAWAL,
-            [userId, withdrawAmount, method, details]);
-
         res.status(200).json({
             message: 'Withdrawal request submitted successfully! It will be processed within 24 hours.',
-            newBalance: balanceAfter
+            newBalance: balanceAfter,
+            withdrawalId: withdrawalId
         });
     } catch (error) {
         console.error('Error requesting withdrawal:', error);

@@ -386,8 +386,8 @@ async function creditUserWallet(userId, amount, currencyType, offerId, eventId) 
         // 5. Record transaction
         await db.query(
             `INSERT INTO wallet_transactions 
-            (user_id, transaction_type, currency_type, amount, balance_before, balance_after, offer_id, event_id, description) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            (user_id, transaction_type, currency_type, amount, balance_before, balance_after, offer_id, event_id, description, status) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 userId,
                 'offer_reward',
@@ -397,7 +397,8 @@ async function creditUserWallet(userId, amount, currencyType, offerId, eventId) 
                 balanceAfter,
                 offerId,
                 eventId,
-                `Offer compensation: ${amount} ${currencyType} (₹${cashAmount.toFixed(2)})`
+                `Offer compensation: ${amount} ${currencyType} (₹${cashAmount.toFixed(2)})`,
+                'success'
             ]
         );
 
@@ -520,7 +521,7 @@ async function getWalletBreakdown(req, res) {
 async function getTransactionHistory(req, res) {
     try {
         const { userId } = req.params;
-        const { limit = 50 } = req.query;
+        const { limit = 50, offset = 0 } = req.query;
 
         const [transactions] = await db.query(
             `SELECT 
@@ -532,8 +533,8 @@ async function getTransactionHistory(req, res) {
             LEFT JOIN offers o ON wt.offer_id = o.id
             WHERE wt.user_id = ?
             ORDER BY wt.created_at DESC
-            LIMIT ?`,
-            [userId, parseInt(limit)]
+            LIMIT ? OFFSET ?`,
+            [userId, parseInt(limit), parseInt(offset)]
         );
 
         res.json({ success: true, transactions });

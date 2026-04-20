@@ -286,6 +286,10 @@ exports.updateWithdrawalStatus = async (req, res) => {
     try {
         await db.query(QUERIES.ADMIN.UPDATE_WITHDRAWAL_STATUS, [status, id]);
 
+        // Update the status in wallet_transactions table too
+        const wtStatus = status === 'APPROVED' || status === 'PAID' ? 'success' : (status === 'REJECTED' ? 'rejected' : 'pending');
+        await db.query('UPDATE wallet_transactions SET status = ? WHERE withdrawal_id = ?', [wtStatus, id]);
+
         // If rejected, refund the amount
         if (status === 'REJECTED') {
             const [withdrawalRows] = await db.query(QUERIES.ADMIN.GET_WITHDRAWAL_BY_ID, [id]);
@@ -301,18 +305,12 @@ exports.updateWithdrawalStatus = async (req, res) => {
                 // Refund to main balance
                 await db.query(QUERIES.USER.UPDATE_BALANCE_ADD, [refundAmount, user_id]);
 
-                // Record in transactions (using all 7 required fields)
+                // Record Refund transaction
                 await db.query(
-                    QUERIES.WALLET.CREATE_TRANSACTION,
-                    [
-                        user_id,
-                        'refund',
-                        'cash',
-                        refundAmount,
-                        balanceBefore,
-                        balanceAfter,
-                        `Withdrawal Rejected (Refund): Request #${id}`
-                    ]
+                    `INSERT INTO wallet_transactions 
+                    (user_id, transaction_type, currency_type, amount, balance_before, balance_after, description, status) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                    [user_id, 'refund', 'cash', refundAmount, balanceBefore, balanceAfter, `Refund: Withdrawal Request #${id} Rejected`, 'success']
                 );
 
                 // Refund to breakdown ledger
