@@ -443,6 +443,15 @@ const initDB = async () => {
     `;
     await promisePool.query(createWalletTransactionsTable);
 
+    // Ensure transaction_type and currency_type are VARCHAR and not ENUM (to allow 'promo', 'signup_bonus', etc.)
+    try {
+      await promisePool.query("ALTER TABLE wallet_transactions MODIFY COLUMN transaction_type VARCHAR(100) NOT NULL");
+      await promisePool.query("ALTER TABLE wallet_transactions MODIFY COLUMN currency_type VARCHAR(20) DEFAULT 'cash'");
+      console.log('Wallet transactions table schema unified.');
+    } catch (e) {
+      console.error('Migration failed for wallet_transactions:', e.message);
+    }
+
     console.log('✅ Offer18 tracking tables checked/created successfully.');
 
   } catch (error) {
