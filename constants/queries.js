@@ -57,7 +57,7 @@ module.exports = {
             ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), description = VALUES(description)
         `,
         GET_ALL_PROMOCODES: 'SELECT * FROM promocodes ORDER BY created_at DESC',
-        CREATE_PROMOCODE: 'INSERT INTO promocodes (code, amount, users_limit, for_whom, status) VALUES (?, ?, ?, ?, ?)',
+        CREATE_PROMOCODE: 'INSERT INTO promocodes (code, amount, users_limit, min_offers, min_referrals, for_whom, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
         DELETE_PROMOCODE: 'DELETE FROM promocodes WHERE id = ?',
         DELETE_OFFER: 'DELETE FROM offers WHERE id = ?',
         DELETE_USER: 'DELETE FROM users WHERE id = ?',
@@ -65,7 +65,7 @@ module.exports = {
             offer_name = ?, offer_id = ?, side_label = ?, heading = ?, history_name = ?, offer_url = ?, tracking_link = ?,
             amount = ?, currency_type = ?, event_name = ?, description = ?, image_url = ?, refer_payout = ?, status = ? 
             WHERE id = ?`,
-        UPDATE_PROMOCODE: 'UPDATE promocodes SET code = ?, amount = ?, users_limit = ?, for_whom = ?, status = ? WHERE id = ?',
+        UPDATE_PROMOCODE: 'UPDATE promocodes SET code = ?, amount = ?, users_limit = ?, min_offers = ?, min_referrals = ?, for_whom = ?, status = ? WHERE id = ?',
         UPDATE_USER_BALANCE: 'UPDATE users SET wallet_balance = ? WHERE id = ?',
         GET_OFFER_STEPS: 'SELECT * FROM offer_event_steps WHERE offer_id = ? ORDER BY step_order ASC',
         UPDATE_ADMIN_PASSWORD: 'UPDATE admin_info SET password = ? WHERE id = 1',

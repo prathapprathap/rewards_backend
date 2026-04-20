@@ -230,7 +230,7 @@ exports.applyReferralCode = async (req, res) => {
 
         const user = userRows[0];
 
-        if (user.referred_by && user.referred_by.toString().trim().isNotEmpty) {
+        if (user.referred_by && user.referred_by.toString().trim() !== '') {
             await connection.rollback();
             return res.status(400).json({ message: 'Referral code already applied for this account' });
         }
@@ -281,11 +281,11 @@ exports.applyReferralCode = async (req, res) => {
             referrer_name: referrer.name || null
         });
     } catch (error) {
-        await connection.rollback();
+        if (connection) await connection.rollback();
         console.error('Error applying referral code:', error);
         return res.status(500).json({ message: 'Server error' });
     } finally {
-        connection.release();
+        if (connection) connection.release();
     }
 };
 
@@ -579,14 +579,18 @@ exports.redeemPromoCode = async (req, res) => {
         return res.status(400).json({ message: 'Code is required' });
     }
 
+    const connection = await db.getConnection();
     try {
-        // Check if code exists and is active
-        const [codes] = await db.query(
-            'SELECT * FROM promocodes WHERE code = ? AND status = ?',
-            [code, 'Active']
+        await connection.beginTransaction();
+
+        // Check if code exists and is active (Case-insensitive)
+        const [codes] = await connection.query(
+            'SELECT * FROM promocodes WHERE UPPER(code) = UPPER(?) AND status = ?',
+            [code.trim(), 'Active']
         );
 
         if (codes.length === 0) {
+            await connection.rollback();
             return res.status(404).json({ message: 'Invalid or expired code' });
         }
 
@@ -594,87 +598,110 @@ exports.redeemPromoCode = async (req, res) => {
 
         // Check overall limit
         if (promoCode.claimed_count >= promoCode.users_limit) {
+            await connection.rollback();
             return res.status(400).json({ message: 'This code usage limit has been reached' });
         }
 
         // Check if user already used this code
-        const [used] = await db.query(
+        const [used] = await connection.query(
             'SELECT * FROM used_promo_codes WHERE user_id = ? AND promo_id = ?',
             [userId, promoCode.id]
         );
 
         if (used.length > 0) {
+            await connection.rollback();
             return res.status(400).json({ message: 'You have already used this code' });
         }
 
         // --- CHECK CONDITIONS ---
 
-        // 1. Minimum Offers Condition
-        if (promoCode.min_offers > 0) {
-            const [offerCount] = await db.query(
+        // 1. Minimum Offers Condition (Total COMPLETED/APPROVED offers)
+        const minOffers = parseInt(promoCode.min_offers || 0);
+        if (minOffers > 0) {
+            const [offerCount] = await connection.query(
                 `SELECT COUNT(DISTINCT offer_id) as count 
                  FROM offer_events 
                  WHERE user_id = ? AND status = 'approved'`,
                 [userId]
             );
-            if (offerCount[0].count < promoCode.min_offers) {
+            if (offerCount[0].count < minOffers) {
+                await connection.rollback();
                 return res.status(400).json({
-                    message: `You need to complete at least ${promoCode.min_offers} offers to use this code.`
+                    message: `You need to complete at least ${minOffers} offers to use this code.`
                 });
             }
         }
 
-        // 2. Minimum Referrals Condition
-        if (promoCode.min_referrals > 0) {
-            const [referralCount] = await db.query(
+        // 2. Minimum Referrals Condition (Successfully completed referrals)
+        const minReferrals = parseInt(promoCode.min_referrals || 0);
+        if (minReferrals > 0) {
+            const [referralCount] = await connection.query(
                 `SELECT COUNT(*) as count 
                  FROM referrals 
                  WHERE referrer_id = ? AND status = 'COMPLETED'`,
                 [userId]
             );
-            if (referralCount[0].count < promoCode.min_referrals) {
+            if (referralCount[0].count < minReferrals) {
+                await connection.rollback();
                 return res.status(400).json({
-                    message: `You need to have at least ${promoCode.min_referrals} successful referrals to use this code.`
+                    message: `You need to have at least ${minReferrals} successful referrals to use this code.`
                 });
             }
         }
 
         // All checks passed - Credit wallet
-        const reward = parseFloat(promoCode.amount);
+        const reward = parseFloat(promoCode.amount || 0);
+        if (isNaN(reward) || reward <= 0) {
+            await connection.rollback();
+            return res.status(400).json({ message: 'Invalid reward amount for this code' });
+        }
 
-        // Transaction safety: Update claimed count and wallet
-        await db.query('UPDATE promocodes SET claimed_count = claimed_count + 1 WHERE id = ?', [promoCode.id]);
+        // Update claimed count
+        await connection.query('UPDATE promocodes SET claimed_count = claimed_count + 1 WHERE id = ?', [promoCode.id]);
 
-        await db.query(
+        // Update users table balance
+        await connection.query(
             'UPDATE users SET wallet_balance = wallet_balance + ?, total_earnings = total_earnings + ? WHERE id = ?',
             [reward, reward, userId]
         );
 
+        // Update wallet breakdown for data consistency
+        await connection.query(
+            `INSERT INTO user_wallet_breakdown (user_id, cash) VALUES (?, ?) 
+             ON DUPLICATE KEY UPDATE cash = cash + ?`,
+            [userId, reward, reward]
+        );
+
         // Record usage
-        await db.query(
+        await connection.query(
             'INSERT INTO used_promo_codes (user_id, promo_id) VALUES (?, ?)',
             [userId, promoCode.id]
         );
 
-        // Record transaction
-        const [userWallet] = await db.query('SELECT wallet_balance FROM users WHERE id = ?', [userId]);
-        const balanceAfter = userWallet[0].wallet_balance;
+        // Record transaction details
+        const [userWallet] = await connection.query('SELECT wallet_balance FROM users WHERE id = ?', [userId]);
+        const balanceAfter = userWallet[0]?.wallet_balance || reward;
         const balanceBefore = balanceAfter - reward;
 
-        await db.query(
+        await connection.query(
             `INSERT INTO wallet_transactions 
             (user_id, transaction_type, currency_type, amount, balance_before, balance_after, description) 
             VALUES (?, ?, ?, ?, ?, ?, ?)`,
             [userId, 'promo', 'cash', reward, balanceBefore, balanceAfter, `Redeemed code: ${code}`]
         );
 
+        await connection.commit();
         return res.status(200).json({
             message: `Congratulations! You received ₹${reward} reward.`,
             reward: reward
         });
+
     } catch (error) {
+        if (connection) await connection.rollback();
         console.error('Error in redeemPromoCode:', error);
-        return res.status(500).json({ message: 'Server error' });
+        return res.status(500).json({ message: 'Server error: ' + error.message });
+    } finally {
+        if (connection) connection.release();
     }
 };
 

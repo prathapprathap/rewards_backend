@@ -380,16 +380,18 @@ exports.getAllPromoCodes = async (req, res) => {
 
 // Create a promocode
 exports.createPromoCode = async (req, res) => {
-    let { code, amount, users_limit, for_whom, status } = req.body;
+    let { code, amount, users_limit, min_offers, min_referrals, for_whom, status } = req.body;
 
     try {
         // Ensure numeric types are handled correctly
         const parsedAmount = parseFloat(amount);
         const parsedLimit = parseInt(users_limit, 10);
+        const parsedMinOffers = parseInt(min_offers || 0, 10);
+        const parsedMinReferrals = parseInt(min_referrals || 0, 10);
 
         await db.query(
             QUERIES.ADMIN.CREATE_PROMOCODE,
-            [code, parsedAmount, parsedLimit, for_whom, status]
+            [code, parsedAmount, parsedLimit, parsedMinOffers, parsedMinReferrals, for_whom, status]
         );
         res.status(201).json({ message: 'Promo code created successfully' });
     } catch (error) {
@@ -416,12 +418,14 @@ exports.deletePromoCode = async (req, res) => {
 // Update a promocode
 exports.updatePromoCode = async (req, res) => {
     const { id } = req.params;
-    const { code, amount, users_limit, for_whom, status } = req.body;
+    const { code, amount, users_limit, min_offers, min_referrals, for_whom, status } = req.body;
 
     try {
         // Ensure numeric types are handled correctly
         const parsedAmount = parseFloat(amount);
         const parsedLimit = parseInt(users_limit, 10);
+        const parsedMinOffers = parseInt(min_offers || 0, 10);
+        const parsedMinReferrals = parseInt(min_referrals || 0, 10);
 
         if (isNaN(parsedAmount) || isNaN(parsedLimit)) {
             return res.status(400).json({ message: 'Invalid amount or limit value' });
@@ -429,7 +433,7 @@ exports.updatePromoCode = async (req, res) => {
 
         await db.query(
             QUERIES.ADMIN.UPDATE_PROMOCODE,
-            [code, parsedAmount, parsedLimit, for_whom, status, id]
+            [code, parsedAmount, parsedLimit, parsedMinOffers, parsedMinReferrals, for_whom, status, id]
         );
         res.status(200).json({ message: 'Promo code updated successfully' });
     } catch (error) {

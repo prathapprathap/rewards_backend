@@ -253,6 +253,15 @@ const initDB = async () => {
     await promisePool.query(createPromoCodesTable);
     console.log('Promocodes table checked/created successfully.');
 
+    // Migration for promocodes
+    const promoMigrations = [
+      "ALTER TABLE promocodes ADD COLUMN min_offers INT DEFAULT 0",
+      "ALTER TABLE promocodes ADD COLUMN min_referrals INT DEFAULT 0",
+    ];
+    for (const sql of promoMigrations) {
+      try { await promisePool.query(sql); } catch (e) { /* column exists */ }
+    }
+
     const createUsedPromoCodesTable = `
       CREATE TABLE IF NOT EXISTS used_promo_codes (
         id INT AUTO_INCREMENT PRIMARY KEY,
