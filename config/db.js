@@ -253,6 +253,38 @@ const initDB = async () => {
     await promisePool.query(createPromoCodesTable);
     console.log('Promocodes table checked/created successfully.');
 
+    const createBannersTable = `
+      CREATE TABLE IF NOT EXISTS banners (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        title VARCHAR(255),
+        subtitle VARCHAR(255),
+        image_url VARCHAR(255),
+        action_type VARCHAR(50), -- refer, offers, telegram, url
+        action_value VARCHAR(255), -- link or id
+        status VARCHAR(20) DEFAULT 'Active',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `;
+    await promisePool.query(createBannersTable);
+    console.log('Banners table checked/created successfully.');
+
+    // Seed default banners
+    const [existingBanners] = await promisePool.query('SELECT COUNT(*) as count FROM banners');
+    if (existingBanners[0].count === 0) {
+      const defaultBanners = [
+        ['REFER AND EARN', 'Invite Friends\\nEarn ₹10+', '', 'refer', 'refer'],
+        ['TASK AND EARN', 'Complete Offers\\nEarn Real Cash', '', 'offers', 'offers'],
+        ['JOIN TELEGRAM', 'Join Our Channel\\nGet Promo Codes', '', 'telegram', 'https://t.me/rewardmobi']
+      ];
+      for (const [title, subtitle, image_url, action_type, action_value] of defaultBanners) {
+        await promisePool.query(
+          'INSERT INTO banners (title, subtitle, image_url, action_type, action_value) VALUES (?, ?, ?, ?, ?)',
+          [title, subtitle, image_url, action_type, action_value]
+        );
+      }
+      console.log('Default banners seeded.');
+    }
+
     // Migration for promocodes
     const promoMigrations = [
       "ALTER TABLE promocodes ADD COLUMN min_offers INT DEFAULT 0",
@@ -303,6 +335,11 @@ const initDB = async () => {
       ['update_mode', 'Off', 'App update mode'],
       ['maintenance_mode', 'Off', 'System maintenance mode status'],
       ['refer_text', 'When your referred friends signup they will get a bonus!', 'Text shown for referral invites'],
+      ['app_package_name', '', 'Android package name for Play Store Rate Us link'],
+      ['privacy_policy_url', '', 'Privacy policy page URL'],
+      ['help_support_url', '', 'Help & support page URL'],
+      ['currency_symbol', '₹', 'Currency symbol used across the app'],
+      ['apk_download_url', '', 'Direct APK download URL for referral sharing'],
     ];
 
     for (const [key, value, description] of defaultSettings) {
@@ -460,6 +497,19 @@ const initDB = async () => {
     }
 
     console.log('✅ Offer18 tracking tables checked/created successfully.');
+
+    // Referral download tracking
+    const createReferralDownloadsTable = `
+      CREATE TABLE IF NOT EXISTS referral_downloads (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        referral_code VARCHAR(10),
+        ip_address VARCHAR(45),
+        user_agent TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `;
+    await promisePool.query(createReferralDownloadsTable);
+    console.log('Referral downloads table checked/created successfully.');
 
   } catch (error) {
     console.error('Error initializing database:', error);

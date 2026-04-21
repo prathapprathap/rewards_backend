@@ -496,3 +496,54 @@ exports.updatePassword = async (req, res) => {
         res.status(500).json({ message: 'Server error' });
     }
 };
+
+// --- Banners ---
+exports.getAllBanners = async (req, res) => {
+    try {
+        const [rows] = await db.query('SELECT * FROM banners ORDER BY id DESC');
+        res.status(200).json(rows);
+    } catch (error) {
+        console.error('Error fetching banners:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+exports.createBanner = async (req, res) => {
+    const { title, subtitle, image_url, action_type, action_value, status } = req.body;
+    try {
+        await db.query(
+            'INSERT INTO banners (title, subtitle, image_url, action_type, action_value, status) VALUES (?, ?, ?, ?, ?, ?)',
+            [title, subtitle, image_url, action_type, action_value, status || 'Active']
+        );
+        res.status(201).json({ message: 'Banner created successfully' });
+    } catch (error) {
+        console.error('Error creating banner:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+exports.updateBanner = async (req, res) => {
+    const { id } = req.params;
+    const { title, subtitle, image_url, action_type, action_value, status } = req.body;
+    try {
+        await db.query(
+            'UPDATE banners SET title = ?, subtitle = ?, image_url = ?, action_type = ?, action_value = ?, status = ? WHERE id = ?',
+            [title, subtitle, image_url, action_type, action_value, status, id]
+        );
+        res.status(200).json({ message: 'Banner updated successfully' });
+    } catch (error) {
+        console.error('Error updating banner:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+exports.deleteBanner = async (req, res) => {
+    const { id } = req.params;
+    try {
+        await db.query('DELETE FROM banners WHERE id = ?', [id]);
+        res.status(200).json({ message: 'Banner deleted successfully' });
+    } catch (error) {
+        console.error('Error deleting banner:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};

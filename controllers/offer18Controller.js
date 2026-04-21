@@ -144,7 +144,10 @@ async function handlePostback(req, res) {
         //   - {click_id}→ alternative format
         // NOTE: cid = campaign ID in this Offer18 setup, NOT click ID
         const clickid = req.query.p1 || req.query.clickid || req.query.click_id;
-        const { payout, status, event, offerid } = req.query;
+        const payout = req.query.payout;
+        const status = req.query.status;
+        const event = req.query.event;
+        const offerid = req.query.offerid || req.query.offerId || req.query.oid; // Support both cases and oid
         const ipAddress = req.ip || req.connection.remoteAddress;
 
         console.log('📥 Postback received:', { clickid, payout, status, event, offerid, raw: req.query });
@@ -545,6 +548,17 @@ async function getTransactionHistory(req, res) {
     }
 }
 
+// Banners
+async function getBanners(req, res) {
+    try {
+        const [banners] = await db.query('SELECT * FROM banners WHERE status = "Active" ORDER BY id DESC');
+        res.json({ success: true, banners });
+    } catch (error) {
+        console.error('Error fetching banners:', error);
+        res.status(500).json({ error: 'Failed to fetch banners' });
+    }
+}
+
 module.exports = {
     trackClick,
     handlePostback,
@@ -552,5 +566,6 @@ module.exports = {
     getConversionAnalytics,
     getWalletBreakdown,
     getTransactionHistory,
+    getBanners,
     creditUserWallet
 };

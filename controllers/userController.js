@@ -97,10 +97,10 @@ exports.loginWithGoogle = async (req, res) => {
                 [userId, bonusSpins, bonusSpins]
             );
 
-            // --- SIGNUP BONUS LOGIC (Centralized Conversion) ---
+            // --- SIGNUP BONUS LOGIC (Cash Only) ---
             const [settings] = await db.query(
-                'SELECT setting_key, setting_value FROM app_settings WHERE setting_key IN (?, ?, ?)',
-                ['signup_bonus_cash', 'signup_bonus_coins', 'coin_rate']
+                'SELECT setting_key, setting_value FROM app_settings WHERE setting_key = ?',
+                ['signup_bonus_cash']
             );
             const settingsMap = settings.reduce((acc, s) => {
                 acc[s.setting_key] = s.setting_value;
@@ -108,31 +108,28 @@ exports.loginWithGoogle = async (req, res) => {
             }, {});
 
             const cashBonus = parseFloat(settingsMap.signup_bonus_cash || '0');
-            const coinBonus = parseFloat(settingsMap.signup_bonus_coins || '0');
-            const coinRateValue = parseFloat(settingsMap.coin_rate || '100');
-            const totalBonusConverted = cashBonus + (coinBonus / coinRateValue);
 
-            if (totalBonusConverted > 0) {
-                // Initialize wallet breakdown (Deeper ledger)
+            if (cashBonus > 0) {
+                // Initialize wallet breakdown
                 await db.query(
                     `INSERT INTO user_wallet_breakdown (user_id, cash) 
                      VALUES (?, ?)
                      ON DUPLICATE KEY UPDATE cash = cash + ?`,
-                    [userId, totalBonusConverted, totalBonusConverted]
+                    [userId, cashBonus, cashBonus]
                 );
 
-                // Update main user balance (Always stored in Cash/Rupees)
+                // Update main user balance
                 await db.query(
                     'UPDATE users SET wallet_balance = wallet_balance + ?, total_earnings = total_earnings + ? WHERE id = ?',
-                    [totalBonusConverted, totalBonusConverted, userId]
+                    [cashBonus, cashBonus, userId]
                 );
 
-                // Record detailed transaction for history screen
+                // Record transaction
                 await db.query(
                     `INSERT INTO wallet_transactions 
-                     (user_id, transaction_type, currency_type, amount, balance_before, balance_after, description) 
-                     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-                    [userId, 'signup_bonus', 'cash', totalBonusConverted, 0, totalBonusConverted, `Signup bonus: ${coinBonus} Coins + ₹${cashBonus}`]
+                     (user_id, transaction_type, currency_type, amount, balance_before, balance_after, description, status) 
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                    [userId, 'signup_bonus', 'cash', cashBonus, 0, cashBonus, `Signup bonus: ₹${cashBonus}`, 'success']
                 );
             }
             // --------------------------------------------------------
@@ -144,8 +141,8 @@ exports.loginWithGoogle = async (req, res) => {
                 name,
                 profile_pic,
                 device_id,
-                wallet_balance: totalBonusConverted,
-                total_earnings: totalBonusConverted,
+                wallet_balance: cashBonus,
+                total_earnings: cashBonus,
                 referral_code: newReferralCode,
                 referred_by: referral_code || null
             };
@@ -154,8 +151,7 @@ exports.loginWithGoogle = async (req, res) => {
                 message: 'User registered successfully',
                 user: newUser,
                 bonus_spins: bonusSpins,
-                signup_bonus_cash: cashBonus,
-                signup_bonus_coins: coinBonus
+                signup_bonus_cash: cashBonus
             });
         }
     } catch (error) {
@@ -541,9 +537,9 @@ exports.useSpin = async (req, res) => {
 
         await db.query(
             `INSERT INTO wallet_transactions 
-            (user_id, transaction_type, currency_type, amount, balance_before, balance_after, description) 
-            VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [userId, 'spin', 'cash', reward, currentCash, currentCash + reward, 'Spin & Win reward']
+            (user_id, transaction_type, currency_type, amount, balance_before, balance_after, description, status) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [userId, 'spin', 'cash', reward, currentCash, currentCash + reward, 'Spin & Win reward', 'success']
         );
 
         // Update user_wallet_breakdown

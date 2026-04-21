@@ -103,8 +103,8 @@ async function processReferralCommission(userId, earnedAmount) {
 
                 await db.query(
                     `INSERT INTO wallet_transactions 
-                     (user_id, transaction_type, currency_type, amount, balance_before, balance_after, description)
-                     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                     (user_id, transaction_type, currency_type, amount, balance_before, balance_after, description, status)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
                     [
                         referrerId,
                         'referral',
@@ -112,7 +112,8 @@ async function processReferralCommission(userId, earnedAmount) {
                         fixedRewardAmount,
                         balanceBefore,
                         balanceAfter,
-                        `Fixed reward for friend (#${userId}) completing ${minOfferCount} required offer(s)`
+                        `Fixed reward for friend (#${userId}) completing ${minOfferCount} required offer(s)`,
+                        'success'
                     ]
                 );
                 console.log(`🎁 Fixed referral reward: ₹${fixedRewardAmount} -> referrer user #${referrerId}`);
@@ -146,8 +147,8 @@ async function processReferralCommission(userId, earnedAmount) {
 
                 await db.query(
                     `INSERT INTO wallet_transactions
-                     (user_id, transaction_type, currency_type, amount, balance_before, balance_after, description)
-                     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                     (user_id, transaction_type, currency_type, amount, balance_before, balance_after, description, status)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
                     [
                         userId,
                         'referral',
@@ -155,7 +156,8 @@ async function processReferralCommission(userId, earnedAmount) {
                         referredUserBonus,
                         balanceBefore,
                         balanceAfter,
-                        `Referral bonus after completing ${minOfferCount} required offer(s)`
+                        `Referral bonus after completing ${minOfferCount} required offer(s)`,
+                        'success'
                     ]
                 );
             }
@@ -184,8 +186,8 @@ async function processReferralCommission(userId, earnedAmount) {
 
                 await db.query(
                     `INSERT INTO wallet_transactions 
-                     (user_id, transaction_type, currency_type, amount, balance_before, balance_after, description)
-                     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                     (user_id, transaction_type, currency_type, amount, balance_before, balance_after, description, status)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
                     [
                         referrerId,
                         'referral',
@@ -193,7 +195,8 @@ async function processReferralCommission(userId, earnedAmount) {
                         commissionAmount,
                         balanceBefore,
                         balanceAfter,
-                        `Referral commission ${commissionPercent}% from referred user #${userId}`
+                        `Referral commission ${commissionPercent}% from referred user #${userId}`,
+                        'success'
                     ]
                 );
 

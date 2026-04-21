@@ -42,6 +42,48 @@ app.get('/', (req, res) => {
     res.send('HotReward Backend is running');
 });
 
+// ── Public APK Download (No Login Required) ──────────────────────────────────
+// GET /api/download/:referralCode → Redirects to APK download URL
+// GET /api/download             → Redirects to APK download URL (no referral)
+app.get('/api/download/:referralCode?', async (req, res) => {
+    try {
+        const referralCode = req.params.referralCode || req.query.ref || '';
+
+        // Get APK download URL from settings
+        const [settings] = await db.query(
+            'SELECT setting_value FROM app_settings WHERE setting_key = ?',
+            ['apk_download_url']
+        );
+
+        const downloadUrl = settings[0]?.setting_value?.trim();
+        if (!downloadUrl) {
+            return res.status(404).json({
+                message: 'APK download not available. Please contact support.'
+            });
+        }
+
+        // Log the download/referral click (optional analytics)
+        if (referralCode) {
+            try {
+                await db.query(
+                    `INSERT INTO referral_downloads (referral_code, ip_address, user_agent, created_at) 
+                     VALUES (?, ?, ?, NOW())`,
+                    [referralCode, req.ip, req.headers['user-agent'] || '']
+                );
+            } catch (e) {
+                // Table may not exist yet, that's fine
+                console.log('Referral download log skipped:', e.message);
+            }
+        }
+
+        // Redirect to APK download
+        return res.redirect(302, downloadUrl);
+    } catch (error) {
+        console.error('Error in download endpoint:', error);
+        return res.status(500).json({ message: 'Server error' });
+    }
+});
+
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });

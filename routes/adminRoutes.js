@@ -26,4 +26,10 @@ router.put('/users/:id/balance', adminController.updateUserBalance);
 router.delete('/users/:id', adminController.deleteUser);
 router.put('/profile/password', adminController.updatePassword);
 
+// Banner Routes
+router.get('/banners', adminController.getAllBanners);
+router.post('/banners', adminController.createBanner);
+router.put('/banners/:id', adminController.updateBanner);
+router.delete('/banners/:id', adminController.deleteBanner);
+
 module.exports = router;

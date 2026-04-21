@@ -11,6 +11,7 @@ router.post('/postback', offer18Controller.handlePostback);
 router.get('/clicks/:userId', offer18Controller.getClickHistory);
 router.get('/wallet/:userId', offer18Controller.getWalletBreakdown);
 router.get('/transactions/:userId', offer18Controller.getTransactionHistory);
+router.get('/banners', offer18Controller.getBanners);
 
 // Sync conversions FROM Offer18 API (pull-based, reliable alternative to postbacks)
 // POST /offer18/sync-conversions?report=1  (1=Today,2=Yesterday,3=Last7Days,4=Last30Days,5=ThisMonth)
