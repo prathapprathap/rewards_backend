@@ -730,75 +730,7 @@ exports.redeemPromoCode = async (req, res) => {
     }
 };
 
-// Claim Telegram Join Reward
-exports.claimTelegramReward = async (req, res) => {
-    const { userId } = req.params;
 
-    try {
-        // 1. Check if already claimed
-        const [existing] = await db.query(
-            "SELECT id FROM wallet_transactions WHERE user_id = ? AND transaction_type = 'telegram_join' LIMIT 1",
-            [userId]
-        );
-
-        if (existing.length > 0) {
-            return res.status(400).json({ message: 'You have already claimed this reward.' });
-        }
-
-        // 2. Get reward amount from settings
-        const [settings] = await db.query(
-            "SELECT setting_value FROM app_settings WHERE setting_key = 'telegram_reward_amount'"
-        );
-        const rewardAmount = parseFloat(settings[0]?.setting_value || '1');
-
-        // 3. User current balance
-        const [user] = await db.query('SELECT wallet_balance FROM users WHERE id = ?', [userId]);
-        if (user.length === 0) return res.status(404).json({ message: 'User not found' });
-
-        const balanceBefore = parseFloat(user[0].wallet_balance);
-        const balanceAfter = balanceBefore + rewardAmount;
-
-        // 4. Update balance and record transaction
-        const connection = await db.getConnection();
-        try {
-            await connection.beginTransaction();
-
-            await connection.query(
-                'UPDATE users SET wallet_balance = ?, total_earnings = total_earnings + ? WHERE id = ?',
-                [balanceAfter, rewardAmount, userId]
-            );
-
-            await connection.query(
-                `INSERT INTO wallet_transactions 
-                (user_id, transaction_type, currency_type, amount, balance_before, balance_after, description, status) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-                [userId, 'telegram_join', 'cash', rewardAmount, balanceBefore, balanceAfter, 'Telegram Channel Join Reward', 'success']
-            );
-
-            // Update user_wallet_breakdown if exists
-            await connection.query(
-                `INSERT INTO user_wallet_breakdown (user_id, cash) VALUES (?, ?) 
-                 ON DUPLICATE KEY UPDATE cash = cash + ?`,
-                [userId, rewardAmount, rewardAmount]
-            );
-
-            await connection.commit();
-            return res.status(200).json({
-                message: `Success! ₹${rewardAmount} credited for joining Telegram.`,
-                reward: rewardAmount
-            });
-        } catch (err) {
-            await connection.rollback();
-            throw err;
-        } finally {
-            connection.release();
-        }
-
-    } catch (error) {
-        console.error('Error claiming telegram reward:', error);
-        return res.status(500).json({ message: 'Server error' });
-    }
-};
 
 // Get app settings
 exports.getAppSettings = async (req, res) => {
