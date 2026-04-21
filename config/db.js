@@ -100,7 +100,8 @@ const initDB = async () => {
     const offerMigrations = [
       "ALTER TABLE offers ADD COLUMN tracking_link VARCHAR(255)",
       "ALTER TABLE offers ADD COLUMN refer_payout VARCHAR(255)",
-      "ALTER TABLE offers ADD COLUMN currency_type VARCHAR(20) DEFAULT 'cash'"
+      "ALTER TABLE offers ADD COLUMN currency_type VARCHAR(20) DEFAULT 'cash'",
+      "ALTER TABLE offers ADD COLUMN side_label_color VARCHAR(20)"
     ];
     for (const sql of offerMigrations) {
       await runSafeQuery(sql);

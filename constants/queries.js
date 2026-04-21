@@ -15,7 +15,7 @@ module.exports = {
         GET_LEADERBOARD: 'SELECT name, profile_pic, total_earnings FROM users ORDER BY total_earnings DESC LIMIT 10',
         GENERATE_REFERRAL_CODE: 'UPDATE users SET referral_code = ? WHERE id = ?',
         GET_USER_BY_REFERRAL_CODE: 'SELECT id FROM users WHERE referral_code = ?',
-        SET_REFERRED_BY: 'UPDATE users SET referred_by = ? WHERE id = ?',
+        SET_REFERRED_BY: 'UPDATE users SET referral_code = ? WHERE id = ?',
         ADD_REFERRAL_EARNINGS: 'UPDATE users SET wallet_balance = wallet_balance + ?, total_earnings = total_earnings + ?, referral_earnings = referral_earnings + ? WHERE id = ?',
         GET_REFERRAL_STATS: 'SELECT COUNT(*) as total_referrals, SUM(CASE WHEN status = "COMPLETED" THEN 1 ELSE 0 END) as successful_referrals, SUM(commission_earned) as total_commission FROM referrals WHERE referrer_id = ?',
         CREATE_REFERRAL: 'INSERT INTO referrals (referrer_id, referred_user_id) VALUES (?, ?)',
@@ -28,9 +28,9 @@ module.exports = {
         CREATE_TASK: 'INSERT INTO tasks (title, description, reward_coins, icon_color, action_url) VALUES (?, ?, ?, ?, ?)',
         DELETE_TASK: 'DELETE FROM tasks WHERE id = ?',
         CREATE_OFFER: `INSERT INTO offers (
-        offer_name, offer_id, side_label, heading, history_name, offer_url, tracking_link, 
+        offer_name, offer_id, side_label, side_label_color, heading, history_name, offer_url, tracking_link, 
         amount, currency_type, event_name, description, image_url, refer_payout, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         GET_ALL_OFFERS: `
           SELECT o.*, 
                  (SELECT COUNT(*) FROM offer_event_steps  WHERE offer_id = o.id) as event_count,
@@ -62,7 +62,7 @@ module.exports = {
         DELETE_OFFER: 'DELETE FROM offers WHERE id = ?',
         DELETE_USER: 'DELETE FROM users WHERE id = ?',
         UPDATE_OFFER: `UPDATE offers SET 
-            offer_name = ?, offer_id = ?, side_label = ?, heading = ?, history_name = ?, offer_url = ?, tracking_link = ?,
+            offer_name = ?, offer_id = ?, side_label = ?, side_label_color = ?, heading = ?, history_name = ?, offer_url = ?, tracking_link = ?,
             amount = ?, currency_type = ?, event_name = ?, description = ?, image_url = ?, refer_payout = ?, status = ? 
             WHERE id = ?`,
         UPDATE_PROMOCODE: 'UPDATE promocodes SET code = ?, amount = ?, users_limit = ?, min_offers = ?, min_referrals = ?, for_whom = ?, status = ? WHERE id = ?',
