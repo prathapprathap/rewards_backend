@@ -47,7 +47,7 @@ app.get('/', (req, res) => {
 // ── Public APK Download (No Login Required) ──────────────────────────────────
 // GET /api/download/:referralCode → Redirects to APK download URL
 // GET /api/download             → Redirects to APK download URL (no referral)
-app.get('/api/download/:referralCode?', async (req, res) => {
+async function handleDownload(req, res) {
     try {
         const referralCode = req.params.referralCode || req.query.ref || '';
 
@@ -96,7 +96,9 @@ app.get('/api/download/:referralCode?', async (req, res) => {
         console.error('Error in download endpoint:', error);
         return res.status(500).json({ message: 'Server error' });
     }
-});
+}
+app.get('/api/download', handleDownload);
+app.get('/api/download/:referralCode', handleDownload);
 
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
