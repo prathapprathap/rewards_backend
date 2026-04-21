@@ -89,9 +89,9 @@ exports.createOffer = async (req, res) => {
                 totalAmount += points;
                 await connection.query(
                     `INSERT INTO offer_event_steps
-                     (offer_id, event_id, event_name, points, currency_type, \`step_order\`)
-                     VALUES (?, ?, ?, ?, ?, ?)`,
-                    [newOfferId, ev.event_id || `evt${i}`, ev.event_name,
+                     (offer_id, event_id, event_name, description, points, currency_type, \`step_order\`)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                    [newOfferId, ev.event_id || `evt${i}`, ev.event_name, ev.description || '',
                         points, ev.currency_type || currency_type, i]
                 );
             }
@@ -193,9 +193,9 @@ exports.updateOffer = async (req, res) => {
                 totalAmount += points;
                 await connection.query(
                     `INSERT INTO offer_event_steps
-                     (offer_id, event_id, event_name, points, currency_type, \`step_order\`)
-                     VALUES (?, ?, ?, ?, ?, ?)`,
-                    [id, ev.event_id || `evt${i}`, ev.event_name,
+                     (offer_id, event_id, event_name, description, points, currency_type, \`step_order\`)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                    [id, ev.event_id || `evt${i}`, ev.event_name, ev.description || '',
                         points, ev.currency_type || currency_type, i]
                 );
             }

@@ -42,6 +42,12 @@ const initDB = async () => {
     await promisePool.query(createUsersTable);
     console.log('Users table checked/created successfully.');
 
+    // Add telegram_id to users for bot verification linkage
+    const addTelegramIdColumn = `
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_id VARCHAR(50) DEFAULT NULL
+    `;
+    await promisePool.query(addTelegramIdColumn);
+
     // Ensure extra columns exist (safe migrations)
     const userMigrations = [
       "ALTER TABLE users ADD COLUMN referral_code VARCHAR(10) UNIQUE",
@@ -340,6 +346,10 @@ const initDB = async () => {
       ['help_support_url', '', 'Help & support page URL'],
       ['currency_symbol', '₹', 'Currency symbol used across the app'],
       ['apk_download_url', '', 'Direct APK download URL for referral sharing'],
+      ['telegram_reward_amount', '1', 'Reward amount for joining Telegram channel'],
+      ['show_telegram_card', 'On', 'Show or hide the featured Telegram reward card'],
+      ['telegram_bot_token', '', 'Telegram Bot API Token (from @BotFather)'],
+      ['telegram_chat_id', '', 'Telegram Channel/Group ID (e.g. @yourchannel)'],
     ];
 
     for (const [key, value, description] of defaultSettings) {
@@ -401,9 +411,10 @@ const initDB = async () => {
     `;
     await promisePool.query(createOfferEventStepsTable);
 
-    // Ensure step_order column exists
+    // Ensure step_order and description columns exist
     try {
       await promisePool.query('ALTER TABLE offer_event_steps ADD COLUMN step_order INT DEFAULT 0 AFTER currency_type');
+      await promisePool.query('ALTER TABLE offer_event_steps ADD COLUMN description TEXT AFTER event_id');
     } catch (e) { }
 
     const createOfferEventsTable = `
@@ -510,6 +521,20 @@ const initDB = async () => {
     `;
     await promisePool.query(createReferralDownloadsTable);
     console.log('Referral downloads table checked/created successfully.');
+
+    // IP + User Agent Referral Attribution (High accuracy auto-detect)
+    const createAttributionsTable = `
+      CREATE TABLE IF NOT EXISTS referral_attributions (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        ip_address VARCHAR(45) NOT NULL,
+        user_agent TEXT NOT NULL,
+        referral_code VARCHAR(10) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_attribution (ip_address, created_at)
+      )
+    `;
+    await promisePool.query(createAttributionsTable);
+    console.log('Referral attributions table checked/created successfully.');
 
   } catch (error) {
     console.error('Error initializing database:', error);

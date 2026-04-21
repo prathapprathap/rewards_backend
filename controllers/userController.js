@@ -9,7 +9,36 @@ exports.loginWithGoogle = async (req, res) => {
         return res.status(400).json({ message: 'Google ID and Email are required' });
     }
 
+    let finalReferralCode = referral_code;
+
     try {
+        // --- AUTO-DETECT REFERRAL (IP + UA Attribution) ---
+        if (!finalReferralCode) {
+            const clientIp = req.ip;
+            const userAgent = req.headers['user-agent'] || 'unknown';
+
+            // 1. Try to find recent attribution for this IP
+            // We sort by created_at DESC to get the latest one in case of multiple clicks on the same WiFi
+            const [attributions] = await db.query(
+                `SELECT id, referral_code FROM referral_attributions 
+                 WHERE ip_address = ? AND created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+                 ORDER BY created_at DESC`,
+                [clientIp]
+            );
+
+            if (attributions.length > 0) {
+                // If multiple exist on the same IP, we pick the most recent one
+                // (Optional: filter by User Agent if UA matching is implemented in the app)
+                finalReferralCode = attributions[0].referral_code;
+                const attributionId = attributions[0].id;
+
+                console.log(`Auto-detected referral code ${finalReferralCode} for IP ${clientIp} (ID: ${attributionId})`);
+
+                // Delete ONLY the specific attribution we used
+                await db.query('DELETE FROM referral_attributions WHERE id = ?', [attributionId]);
+            }
+        }
+
         // Check if user exists
         const [rows] = await db.query(QUERIES.USER.CHECK_EXISTING_BY_GOOGLE_ID, [google_id]);
 
@@ -72,12 +101,12 @@ exports.loginWithGoogle = async (req, res) => {
 
             // Process referral if code provided
             let referrerId = null;
-            if (referral_code) {
-                const [referrerRows] = await db.query(QUERIES.USER.GET_USER_BY_REFERRAL_CODE, [referral_code]);
+            if (finalReferralCode) {
+                const [referrerRows] = await db.query(QUERIES.USER.GET_USER_BY_REFERRAL_CODE, [finalReferralCode]);
                 if (referrerRows.length > 0) {
                     referrerId = referrerRows[0].id;
                     // Set referred_by on new user
-                    await db.query(QUERIES.USER.SET_REFERRED_BY, [referral_code, userId]);
+                    await db.query(QUERIES.USER.SET_REFERRED_BY, [finalReferralCode, userId]);
                     // Create referral record (PENDING status)
                     await db.query(QUERIES.USER.CREATE_REFERRAL, [referrerId, userId]);
                 }
@@ -144,7 +173,7 @@ exports.loginWithGoogle = async (req, res) => {
                 wallet_balance: cashBonus,
                 total_earnings: cashBonus,
                 referral_code: newReferralCode,
-                referred_by: referral_code || null
+                referred_by: finalReferralCode || null
             };
 
             return res.status(201).json({
@@ -698,6 +727,76 @@ exports.redeemPromoCode = async (req, res) => {
         return res.status(500).json({ message: 'Server error: ' + error.message });
     } finally {
         if (connection) connection.release();
+    }
+};
+
+// Claim Telegram Join Reward
+exports.claimTelegramReward = async (req, res) => {
+    const { userId } = req.params;
+
+    try {
+        // 1. Check if already claimed
+        const [existing] = await db.query(
+            "SELECT id FROM wallet_transactions WHERE user_id = ? AND transaction_type = 'telegram_join' LIMIT 1",
+            [userId]
+        );
+
+        if (existing.length > 0) {
+            return res.status(400).json({ message: 'You have already claimed this reward.' });
+        }
+
+        // 2. Get reward amount from settings
+        const [settings] = await db.query(
+            "SELECT setting_value FROM app_settings WHERE setting_key = 'telegram_reward_amount'"
+        );
+        const rewardAmount = parseFloat(settings[0]?.setting_value || '1');
+
+        // 3. User current balance
+        const [user] = await db.query('SELECT wallet_balance FROM users WHERE id = ?', [userId]);
+        if (user.length === 0) return res.status(404).json({ message: 'User not found' });
+
+        const balanceBefore = parseFloat(user[0].wallet_balance);
+        const balanceAfter = balanceBefore + rewardAmount;
+
+        // 4. Update balance and record transaction
+        const connection = await db.getConnection();
+        try {
+            await connection.beginTransaction();
+
+            await connection.query(
+                'UPDATE users SET wallet_balance = ?, total_earnings = total_earnings + ? WHERE id = ?',
+                [balanceAfter, rewardAmount, userId]
+            );
+
+            await connection.query(
+                `INSERT INTO wallet_transactions 
+                (user_id, transaction_type, currency_type, amount, balance_before, balance_after, description, status) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                [userId, 'telegram_join', 'cash', rewardAmount, balanceBefore, balanceAfter, 'Telegram Channel Join Reward', 'success']
+            );
+
+            // Update user_wallet_breakdown if exists
+            await connection.query(
+                `INSERT INTO user_wallet_breakdown (user_id, cash) VALUES (?, ?) 
+                 ON DUPLICATE KEY UPDATE cash = cash + ?`,
+                [userId, rewardAmount, rewardAmount]
+            );
+
+            await connection.commit();
+            return res.status(200).json({
+                message: `Success! ₹${rewardAmount} credited for joining Telegram.`,
+                reward: rewardAmount
+            });
+        } catch (err) {
+            await connection.rollback();
+            throw err;
+        } finally {
+            connection.release();
+        }
+
+    } catch (error) {
+        console.error('Error claiming telegram reward:', error);
+        return res.status(500).json({ message: 'Server error' });
     }
 };
 

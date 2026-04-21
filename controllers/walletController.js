@@ -127,9 +127,14 @@ exports.spinWheel = async (req, res) => {
     const SPIN_COST = 0; // Free for now, or set a cost
 
     try {
-        // Random reward logic (simple version)
-        const rewards = [1, 5, 10, 0.5, 2, 0, 50, 100];
-        const randomReward = rewards[Math.floor(Math.random() * rewards.length)];
+        // Get spin reward values from settings
+        const [settings] = await db.query(
+            'SELECT setting_value FROM app_settings WHERE setting_key = ?',
+            ['spin_reward_values']
+        );
+
+        const rewardValues = settings[0]?.setting_value.split(',').map(v => parseFloat(v.trim())) || [1, 2, 5, 10];
+        const randomReward = rewardValues[Math.floor(Math.random() * rewardValues.length)];
 
         // Update Balance
         await db.query(QUERIES.USER.UPDATE_BALANCE_AND_EARNINGS,

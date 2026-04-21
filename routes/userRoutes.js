@@ -12,6 +12,7 @@ router.post('/promo/:userId/redeem', userController.redeemPromoCode);
 router.post('/:userId/apply-referral', userController.applyReferralCode);
 router.get('/:userId/referral-stats', referralController.getReferralStats);
 router.post('/:userId/scratch-offer', userController.scratchOffer);
+router.post('/:userId/claim-telegram-reward', userController.claimTelegramReward);
 router.get('/:userId/offers', userController.getUserOffers);
 router.put('/:userId/payout', userController.updatePayoutDetails);
 

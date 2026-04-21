@@ -8,6 +8,7 @@ const adminRoutes = require('./routes/adminRoutes');
 const walletRoutes = require('./routes/walletRoutes');
 const offer18Routes = require('./routes/offer18Routes');
 const offerRoutes = require('./routes/offerRoutes');
+const telegramRoutes = require('./routes/telegramRoutes');
 
 const http = require('http');
 
@@ -25,6 +26,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/wallet', walletRoutes);
 app.use('/api/offer18', offer18Routes);
 app.use('/api/offers', offerRoutes);
+app.use('/api/telegram', telegramRoutes);
 
 
 // Database Keep-Alive Route
@@ -65,14 +67,26 @@ app.get('/api/download/:referralCode?', async (req, res) => {
         // Log the download/referral click (optional analytics)
         if (referralCode) {
             try {
+                // 1. Log the click for analytics
                 await db.query(
                     `INSERT INTO referral_downloads (referral_code, ip_address, user_agent, created_at) 
                      VALUES (?, ?, ?, NOW())`,
                     [referralCode, req.ip, req.headers['user-agent'] || '']
                 );
+
+                // 2. Cache it for attribution (Auto-detect logic)
+                const userAgent = req.headers['user-agent'] || 'unknown';
+
+                // We delete older ones for this IP+UA combo to keep it fresh
+                await db.query('DELETE FROM referral_attributions WHERE ip_address = ? AND user_agent = ?', [req.ip, userAgent]);
+
+                await db.query(
+                    `INSERT INTO referral_attributions (ip_address, user_agent, referral_code, created_at) 
+                     VALUES (?, ?, ?, NOW())`,
+                    [req.ip, userAgent, referralCode]
+                );
             } catch (e) {
-                // Table may not exist yet, that's fine
-                console.log('Referral download log skipped:', e.message);
+                console.log('Referral logging/attribution failed:', e.message);
             }
         }
 
