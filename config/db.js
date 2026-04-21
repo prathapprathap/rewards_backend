@@ -25,8 +25,19 @@ const initDB = async () => {
   try {
     console.log('Verifying tables in database:', dbConfig.database);
 
-    // Now create tables
-    const createUsersTable = `
+    // Helper for safe migrations
+    const runSafeQuery = async (query, label) => {
+      try {
+        await promisePool.query(query);
+        if (label) console.log(`${label} checked/updated.`);
+      } catch (e) {
+        if (label) console.log(`Skipping ${label}:`, e.message);
+      }
+    };
+
+    // ─── Core Tables ───
+
+    await promisePool.query(`
       CREATE TABLE IF NOT EXISTS users (
         id INT AUTO_INCREMENT PRIMARY KEY,
         google_id VARCHAR(255) UNIQUE NOT NULL,
@@ -37,19 +48,11 @@ const initDB = async () => {
         device_id VARCHAR(255),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
-    `;
+    `);
 
-    await promisePool.query(createUsersTable);
-    console.log('Users table checked/created successfully.');
-
-    // Add telegram_id to users for bot verification linkage
-    const addTelegramIdColumn = `
-      ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_id VARCHAR(50) DEFAULT NULL
-    `;
-    await promisePool.query(addTelegramIdColumn);
-
-    // Ensure extra columns exist (safe migrations)
+    // User Column Migrations
     const userMigrations = [
+      "ALTER TABLE users ADD COLUMN telegram_id VARCHAR(50) DEFAULT NULL",
       "ALTER TABLE users ADD COLUMN referral_code VARCHAR(10) UNIQUE",
       "ALTER TABLE users ADD COLUMN referred_by VARCHAR(10)",
       "ALTER TABLE users ADD COLUMN total_earnings DECIMAL(10,2) DEFAULT 0.00",
@@ -59,11 +62,10 @@ const initDB = async () => {
       "ALTER TABLE users ADD COLUMN upi_id VARCHAR(255)",
     ];
     for (const sql of userMigrations) {
-      try { await promisePool.query(sql); } catch (e) { /* column already exists */ }
+      await runSafeQuery(sql);
     }
 
-
-    const createTasksTable = `
+    await promisePool.query(`
       CREATE TABLE IF NOT EXISTS tasks (
         id INT AUTO_INCREMENT PRIMARY KEY,
         title VARCHAR(255) NOT NULL,
@@ -73,12 +75,9 @@ const initDB = async () => {
         action_url VARCHAR(255),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
-    `;
+    `);
 
-    await promisePool.query(createTasksTable);
-    console.log('Tasks table checked/created successfully.');
-
-    const createOffersTable = `
+    await promisePool.query(`
       CREATE TABLE IF NOT EXISTS offers (
         id INT AUTO_INCREMENT PRIMARY KEY,
         offer_name VARCHAR(255) NOT NULL,
@@ -95,22 +94,26 @@ const initDB = async () => {
         status VARCHAR(50) DEFAULT 'Active',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
-    `;
+    `);
 
-    await promisePool.query(createOffersTable);
-    console.log('Offers table checked/created successfully.');
+    // Offer Column Migrations
+    const offerMigrations = [
+      "ALTER TABLE offers ADD COLUMN tracking_link VARCHAR(255)",
+      "ALTER TABLE offers ADD COLUMN refer_payout VARCHAR(255)",
+      "ALTER TABLE offers ADD COLUMN currency_type VARCHAR(20) DEFAULT 'cash'"
+    ];
+    for (const sql of offerMigrations) {
+      await runSafeQuery(sql);
+    }
 
-    const createAdminTable = `
+    await promisePool.query(`
       CREATE TABLE IF NOT EXISTS admin_info (
         id INT AUTO_INCREMENT PRIMARY KEY,
         username VARCHAR(255) UNIQUE NOT NULL,
         password VARCHAR(255) NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
-    `;
-
-    await promisePool.query(createAdminTable);
-    console.log('Admin table checked/created successfully.');
+    `);
 
     // Create default admin if not exists
     const [admins] = await promisePool.query('SELECT * FROM admin_info WHERE username = ?', ['admin']);
@@ -119,43 +122,9 @@ const initDB = async () => {
       const hashedPassword = await bcrypt.hash('admin123', 10);
       await promisePool.query('INSERT INTO admin_info (username, password) VALUES (?, ?)', ['admin', hashedPassword]);
       console.log('Default admin created.');
-    } else {
-      // Optional: Update plain text password to hashed if it matches 'admin123' (for migration)
-      const admin = admins[0];
-      if (admin.password === 'admin123') {
-        const bcrypt = require('bcryptjs');
-        const hashedPassword = await bcrypt.hash('admin123', 10);
-        await promisePool.query('UPDATE admin_info SET password = ? WHERE id = ?', [hashedPassword, admin.id]);
-        console.log('Updated default admin password to hash.');
-      }
     }
 
-    // Update Users Table for Referrals
-    try {
-      await promisePool.query(`ALTER TABLE users ADD COLUMN referral_code VARCHAR(10) UNIQUE`);
-      await promisePool.query(`ALTER TABLE users ADD COLUMN referred_by VARCHAR(10)`);
-      await promisePool.query(`ALTER TABLE users ADD COLUMN total_earnings DECIMAL(10, 2) DEFAULT 0.00`);
-      await promisePool.query(`ALTER TABLE users ADD COLUMN referral_earnings DECIMAL(10, 2) DEFAULT 0.00`);
-      await promisePool.query(`ALTER TABLE users ADD COLUMN last_checkin_date DATE`);
-      console.log('Users table updated with referral and checkin columns.');
-    } catch (e) {
-      // Ignore if columns already exist
-    }
-
-    // Update Offers table migrations
-    const offerMigrations = [
-      "ALTER TABLE offers ADD COLUMN side_label VARCHAR(100)",
-      "ALTER TABLE offers ADD COLUMN tracking_link VARCHAR(255)",
-      "ALTER TABLE offers ADD COLUMN refer_payout VARCHAR(255)",
-      "ALTER TABLE offers ADD COLUMN currency_type VARCHAR(20) DEFAULT 'cash'",
-      "ALTER TABLE offers MODIFY COLUMN currency_type VARCHAR(20) DEFAULT 'cash'"
-    ];
-    for (const sql of offerMigrations) {
-      try { await promisePool.query(sql); } catch (e) { /* column already exists */ }
-    }
-
-    // Create Referrals Tracking Table
-    const createReferralsTable = `
+    await promisePool.query(`
       CREATE TABLE IF NOT EXISTS referrals (
         id INT AUTO_INCREMENT PRIMARY KEY,
         referrer_id INT NOT NULL,
@@ -168,11 +137,9 @@ const initDB = async () => {
         FOREIGN KEY (referred_user_id) REFERENCES users(id) ON DELETE CASCADE,
         UNIQUE KEY unique_referral (referrer_id, referred_user_id)
       )
-    `;
-    await promisePool.query(createReferralsTable);
-    console.log('Referrals table checked/created successfully.');
+    `);
 
-    const createTransactionsTable = `
+    await promisePool.query(`
       CREATE TABLE IF NOT EXISTS transactions (
         id INT AUTO_INCREMENT PRIMARY KEY,
         user_id INT NOT NULL,
@@ -182,11 +149,9 @@ const initDB = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )
-    `;
-    await promisePool.query(createTransactionsTable);
-    console.log('Transactions table checked/created successfully.');
+    `);
 
-    const createWithdrawalsTable = `
+    await promisePool.query(`
       CREATE TABLE IF NOT EXISTS withdrawals (
         id INT AUTO_INCREMENT PRIMARY KEY,
         user_id INT NOT NULL,
@@ -197,11 +162,9 @@ const initDB = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )
-    `;
-    await promisePool.query(createWithdrawalsTable);
-    console.log('Withdrawals table checked/created successfully.');
+    `);
 
-    const createScratchedOffersTable = `
+    await promisePool.query(`
       CREATE TABLE IF NOT EXISTS scratched_offers (
         id INT AUTO_INCREMENT PRIMARY KEY,
         user_id INT NOT NULL,
@@ -211,11 +174,9 @@ const initDB = async () => {
         FOREIGN KEY (offer_id) REFERENCES offers(id) ON DELETE CASCADE,
         UNIQUE KEY unique_user_offer (user_id, offer_id)
       )
-    `;
-    await promisePool.query(createScratchedOffersTable);
-    console.log('Scratched offers table checked/created successfully.');
+    `);
 
-    const createCheckinsTable = `
+    await promisePool.query(`
       CREATE TABLE IF NOT EXISTS checkins (
         id INT AUTO_INCREMENT PRIMARY KEY,
         user_id INT NOT NULL,
@@ -226,11 +187,9 @@ const initDB = async () => {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
         UNIQUE KEY unique_user_date (user_id, checkin_date)
       )
-    `;
-    await promisePool.query(createCheckinsTable);
-    console.log('Checkins table checked/created successfully.');
+    `);
 
-    const createAppSettingsTable = `
+    await promisePool.query(`
       CREATE TABLE IF NOT EXISTS app_settings (
         id INT AUTO_INCREMENT PRIMARY KEY,
         setting_key VARCHAR(100) UNIQUE NOT NULL,
@@ -238,11 +197,9 @@ const initDB = async () => {
         description VARCHAR(255),
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       )
-    `;
-    await promisePool.query(createAppSettingsTable);
-    console.log('App settings table checked/created successfully.');
+    `);
 
-    const createPromoCodesTable = `
+    await promisePool.query(`
       CREATE TABLE IF NOT EXISTS promocodes (
         id INT AUTO_INCREMENT PRIMARY KEY,
         code VARCHAR(50) UNIQUE NOT NULL,
@@ -255,11 +212,25 @@ const initDB = async () => {
         status ENUM('Active', 'Inactive') DEFAULT 'Active',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
-    `;
-    await promisePool.query(createPromoCodesTable);
-    console.log('Promocodes table checked/created successfully.');
+    `);
 
-    const createBannersTable = `
+    // Promocode Migrations
+    await runSafeQuery("ALTER TABLE promocodes ADD COLUMN min_offers INT DEFAULT 0");
+    await runSafeQuery("ALTER TABLE promocodes ADD COLUMN min_referrals INT DEFAULT 0");
+
+    await promisePool.query(`
+      CREATE TABLE IF NOT EXISTS used_promo_codes (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        promo_id INT NOT NULL,
+        claimed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (promo_id) REFERENCES promocodes(id) ON DELETE CASCADE,
+        UNIQUE KEY unique_user_promo (user_id, promo_id)
+      )
+    `);
+
+    await promisePool.query(`
       CREATE TABLE IF NOT EXISTS banners (
         id INT AUTO_INCREMENT PRIMARY KEY,
         title VARCHAR(255),
@@ -270,9 +241,7 @@ const initDB = async () => {
         status VARCHAR(20) DEFAULT 'Active',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
-    `;
-    await promisePool.query(createBannersTable);
-    console.log('Banners table checked/created successfully.');
+    `);
 
     // Seed default banners
     const [existingBanners] = await promisePool.query('SELECT COUNT(*) as count FROM banners');
@@ -291,30 +260,7 @@ const initDB = async () => {
       console.log('Default banners seeded.');
     }
 
-    // Migration for promocodes
-    const promoMigrations = [
-      "ALTER TABLE promocodes ADD COLUMN min_offers INT DEFAULT 0",
-      "ALTER TABLE promocodes ADD COLUMN min_referrals INT DEFAULT 0",
-    ];
-    for (const sql of promoMigrations) {
-      try { await promisePool.query(sql); } catch (e) { /* column exists */ }
-    }
-
-    const createUsedPromoCodesTable = `
-      CREATE TABLE IF NOT EXISTS used_promo_codes (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        user_id INT NOT NULL,
-        promo_id INT NOT NULL,
-        claimed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-        FOREIGN KEY (promo_id) REFERENCES promocodes(id) ON DELETE CASCADE,
-        UNIQUE KEY unique_user_promo (user_id, promo_id)
-      )
-    `;
-    await promisePool.query(createUsedPromoCodesTable);
-    console.log('Used promo codes table checked/created successfully.');
-
-    // Insert default settings if not exists
+    // Insert default settings
     const defaultSettings = [
       ['new_user_spin_bonus', '2', 'Number of free spins for new users'],
       ['signup_bonus_cash', '5', 'Initial bonus cash (₹) for signing up'],
@@ -358,9 +304,8 @@ const initDB = async () => {
         [key, value, description]
       );
     }
-    console.log('Default app settings initialized.');
 
-    const createUserSpinsTable = `
+    await promisePool.query(`
       CREATE TABLE IF NOT EXISTS user_spins (
         id INT AUTO_INCREMENT PRIMARY KEY,
         user_id INT NOT NULL,
@@ -371,13 +316,11 @@ const initDB = async () => {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
         UNIQUE KEY unique_user (user_id)
       )
-    `;
-    await promisePool.query(createUserSpinsTable);
-    console.log('User spins table checked/created successfully.');
+    `);
 
     // --- Offer18 Tracking Tables ---
 
-    const createOfferClicksTable = `
+    await promisePool.query(`
       CREATE TABLE IF NOT EXISTS offer_clicks (
         id INT AUTO_INCREMENT PRIMARY KEY,
         click_id VARCHAR(64) UNIQUE NOT NULL,
@@ -392,10 +335,9 @@ const initDB = async () => {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
         FOREIGN KEY (offer_id) REFERENCES offers(id) ON DELETE CASCADE
       )
-    `;
-    await promisePool.query(createOfferClicksTable);
+    `);
 
-    const createOfferEventStepsTable = `
+    await promisePool.query(`
       CREATE TABLE IF NOT EXISTS offer_event_steps (
         id INT AUTO_INCREMENT PRIMARY KEY,
         offer_id INT NOT NULL,
@@ -408,16 +350,13 @@ const initDB = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (offer_id) REFERENCES offers(id) ON DELETE CASCADE
       )
-    `;
-    await promisePool.query(createOfferEventStepsTable);
+    `);
 
-    // Ensure step_order and description columns exist
-    try {
-      await promisePool.query('ALTER TABLE offer_event_steps ADD COLUMN step_order INT DEFAULT 0 AFTER currency_type');
-      await promisePool.query('ALTER TABLE offer_event_steps ADD COLUMN description TEXT AFTER event_id');
-    } catch (e) { }
+    // Multi-event columns
+    await runSafeQuery("ALTER TABLE offer_event_steps ADD COLUMN step_order INT DEFAULT 0 AFTER currency_type");
+    await runSafeQuery("ALTER TABLE offer_event_steps ADD COLUMN description TEXT AFTER event_id");
 
-    const createOfferEventsTable = `
+    await promisePool.query(`
       CREATE TABLE IF NOT EXISTS offer_events (
         id INT AUTO_INCREMENT PRIMARY KEY,
         click_id VARCHAR(64) NOT NULL,
@@ -436,15 +375,11 @@ const initDB = async () => {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
         FOREIGN KEY (offer_id) REFERENCES offers(id) ON DELETE CASCADE
       )
-    `;
-    await promisePool.query(createOfferEventsTable);
+    `);
 
-    // Ensure event_step_id column exists for multi-event support
-    try {
-      await promisePool.query('ALTER TABLE offer_events ADD COLUMN event_step_id INT AFTER click_id');
-    } catch (e) { }
+    await runSafeQuery("ALTER TABLE offer_events ADD COLUMN event_step_id INT AFTER click_id");
 
-    const createPostbackLogsTable = `
+    await promisePool.query(`
       CREATE TABLE IF NOT EXISTS postback_logs (
         id INT AUTO_INCREMENT PRIMARY KEY,
         click_id VARCHAR(64),
@@ -455,25 +390,20 @@ const initDB = async () => {
         error_message TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
-    `;
-    await promisePool.query(createPostbackLogsTable);
+    `);
 
-    // Ensure status enum includes 'pending'
-    try {
-      await promisePool.query("ALTER TABLE postback_logs MODIFY COLUMN status ENUM('success', 'failed', 'pending') DEFAULT 'pending'");
-    } catch (e) { }
+    await runSafeQuery("ALTER TABLE postback_logs MODIFY COLUMN status ENUM('success', 'failed', 'pending') DEFAULT 'pending'");
 
-    const createWalletBreakdownTable = `
+    await promisePool.query(`
       CREATE TABLE IF NOT EXISTS user_wallet_breakdown (
         user_id INT PRIMARY KEY,
         cash DECIMAL(10, 2) DEFAULT 0.00,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )
-    `;
-    await promisePool.query(createWalletBreakdownTable);
+    `);
 
-    const createWalletTransactionsTable = `
+    await promisePool.query(`
       CREATE TABLE IF NOT EXISTS wallet_transactions (
         id INT AUTO_INCREMENT PRIMARY KEY,
         user_id INT NOT NULL,
@@ -485,32 +415,18 @@ const initDB = async () => {
         offer_id INT,
         event_id INT,
         description TEXT,
-        status VARCHAR(50) DEFAULT 'success', -- success, pending, rejected
+        status VARCHAR(50) DEFAULT 'success',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )
-    `;
-    await promisePool.query(createWalletTransactionsTable);
+    `);
 
-    // Add status and withdrawal_id columns if they don't exist (for existing tables)
-    try {
-      await promisePool.query("ALTER TABLE wallet_transactions ADD COLUMN status VARCHAR(50) DEFAULT 'success' AFTER description");
-      await promisePool.query("ALTER TABLE wallet_transactions ADD COLUMN withdrawal_id INT AFTER event_id");
-    } catch (e) { }
+    await runSafeQuery("ALTER TABLE wallet_transactions ADD COLUMN status VARCHAR(50) DEFAULT 'success' AFTER description");
+    await runSafeQuery("ALTER TABLE wallet_transactions ADD COLUMN withdrawal_id INT AFTER event_id");
+    await runSafeQuery("ALTER TABLE wallet_transactions MODIFY COLUMN transaction_type VARCHAR(100) NOT NULL");
+    await runSafeQuery("ALTER TABLE wallet_transactions MODIFY COLUMN currency_type VARCHAR(20) DEFAULT 'cash'");
 
-    // Ensure transaction_type and currency_type are VARCHAR and not ENUM (to allow 'promo', 'signup_bonus', etc.)
-    try {
-      await promisePool.query("ALTER TABLE wallet_transactions MODIFY COLUMN transaction_type VARCHAR(100) NOT NULL");
-      await promisePool.query("ALTER TABLE wallet_transactions MODIFY COLUMN currency_type VARCHAR(20) DEFAULT 'cash'");
-      console.log('Wallet transactions table schema unified.');
-    } catch (e) {
-      console.error('Migration failed for wallet_transactions:', e.message);
-    }
-
-    console.log('✅ Offer18 tracking tables checked/created successfully.');
-
-    // Referral download tracking
-    const createReferralDownloadsTable = `
+    await promisePool.query(`
       CREATE TABLE IF NOT EXISTS referral_downloads (
         id INT AUTO_INCREMENT PRIMARY KEY,
         referral_code VARCHAR(10),
@@ -518,12 +434,9 @@ const initDB = async () => {
         user_agent TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
-    `;
-    await promisePool.query(createReferralDownloadsTable);
-    console.log('Referral downloads table checked/created successfully.');
+    `);
 
-    // IP + User Agent Referral Attribution (High accuracy auto-detect)
-    const createAttributionsTable = `
+    await promisePool.query(`
       CREATE TABLE IF NOT EXISTS referral_attributions (
         id INT AUTO_INCREMENT PRIMARY KEY,
         ip_address VARCHAR(45) NOT NULL,
@@ -532,12 +445,25 @@ const initDB = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         INDEX idx_attribution (ip_address, created_at)
       )
-    `;
-    await promisePool.query(createAttributionsTable);
-    console.log('Referral attributions table checked/created successfully.');
+    `);
 
+    // Fraud prevention
+    await promisePool.query(`
+      CREATE TABLE IF NOT EXISTS device_fingerprints (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        device_id VARCHAR(255) NOT NULL,
+        ip_address VARCHAR(45),
+        user_agent TEXT,
+        last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        UNIQUE KEY idx_device_user (device_id, user_id)
+      )
+    `);
+
+    console.log('✅ Database initialization complete.');
   } catch (error) {
-    console.error('Error initializing database:', error);
+    console.error('❌ Error during database initialization:', error);
   }
 };
 

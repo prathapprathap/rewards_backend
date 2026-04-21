@@ -363,8 +363,9 @@ exports.getUserOffers = async (req, res) => {
 
                 // Get user's completed events for these offers
                 const [completedEvents] = await db.query(
-                    `SELECT oe.offer_id, oe.event_name, oe.payout,
-                            oes.points as step_points
+                    `SELECT oe.offer_id, oe.event_name, 
+                            MAX(oe.payout) as payout,
+                            MAX(oes.points) as step_points
                      FROM offer_events oe
                      LEFT JOIN offer_event_steps oes
                        ON oe.offer_id = oes.offer_id

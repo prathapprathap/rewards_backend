@@ -450,7 +450,7 @@ async function getClickHistory(req, res) {
             LEFT JOIN offers o ON oc.offer_id = o.id
             LEFT JOIN offer_events oe ON oc.click_id = oe.click_id AND oe.status = 'approved'
             WHERE oc.user_id = ?
-            GROUP BY oc.id
+            GROUP BY oc.id, o.offer_name, o.heading, o.image_url
             ORDER BY oc.created_at DESC
             LIMIT 50`,
             [userId]
@@ -478,7 +478,7 @@ async function getConversionAnalytics(req, res) {
             FROM offers o
             LEFT JOIN offer_clicks oc ON o.id = oc.offer_id
             LEFT JOIN offer_events oe ON oc.click_id = oe.click_id
-            GROUP BY o.id
+            GROUP BY o.id, o.offer_name
             ORDER BY total_clicks DESC
         `);
 
