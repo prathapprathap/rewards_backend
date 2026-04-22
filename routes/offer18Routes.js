@@ -38,7 +38,7 @@ router.get('/fetch-conversions', async (req, res) => {
 });
 
 // Admin endpoints
-router.get('/analytics/conversions', offer18Controller.getConversionAnalytics);
+
 router.get('/admin/postback-logs', async (req, res) => {
     try {
         const logs = await adminUtils.getPostbackLogs(req.query);

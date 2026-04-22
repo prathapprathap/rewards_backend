@@ -464,31 +464,7 @@ async function getClickHistory(req, res) {
     }
 }
 
-// Get conversion analytics for admin
-async function getConversionAnalytics(req, res) {
-    try {
-        const [analytics] = await db.query(`
-            SELECT 
-                o.id,
-                o.offer_name,
-                COUNT(DISTINCT oc.click_id) as total_clicks,
-                COUNT(DISTINCT CASE WHEN oe.status = 'approved' THEN oe.click_id END) as conversions,
-                ROUND(COUNT(DISTINCT CASE WHEN oe.status = 'approved' THEN oe.click_id END) * 100.0 / NULLIF(COUNT(DISTINCT oc.click_id), 0), 2) as conversion_rate,
-                SUM(CASE WHEN oe.status = 'approved' THEN oe.payout ELSE 0 END) as total_payout
-            FROM offers o
-            LEFT JOIN offer_clicks oc ON o.id = oc.offer_id
-            LEFT JOIN offer_events oe ON oc.click_id = oe.click_id
-            GROUP BY o.id, o.offer_name
-            ORDER BY total_clicks DESC
-        `);
 
-        res.json({ success: true, analytics });
-
-    } catch (error) {
-        console.error('Error fetching analytics:', error);
-        res.status(500).json({ error: 'Failed to fetch analytics' });
-    }
-}
 
 // Get wallet breakdown for user
 async function getWalletBreakdown(req, res) {
@@ -563,7 +539,6 @@ module.exports = {
     trackClick,
     handlePostback,
     getClickHistory,
-    getConversionAnalytics,
     getWalletBreakdown,
     getTransactionHistory,
     getBanners,
