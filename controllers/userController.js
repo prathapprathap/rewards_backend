@@ -56,18 +56,19 @@ exports.loginWithGoogle = async (req, res) => {
             // Device restriction logic
             if (device_id) {
                 if (!user.device_id) {
-                    // First time login - register this device
                     await db.query(QUERIES.USER.UPDATE_DEVICE_ID, [device_id, user.id]);
                     user.device_id = device_id;
                 } else if (user.device_id !== device_id) {
-                    // Different device - BLOCK
                     return res.status(403).json({
                         message: 'This account is already registered on another device.',
                         error_code: 'DEVICE_LOCKED'
                     });
                 }
-                // else: same device - allow login
             }
+
+            // Update last login
+            await db.query('UPDATE users SET last_login_at = NOW() WHERE id = ?', [user.id]);
+            user.last_login_at = new Date();
 
             return res.status(200).json({ message: 'Login successful', user });
         } else {
@@ -89,7 +90,7 @@ exports.loginWithGoogle = async (req, res) => {
 
             // User does not exist, create new user
             const [result] = await db.query(
-                QUERIES.USER.CREATE_USER,
+                'INSERT INTO users (google_id, email, name, profile_pic, device_id, last_login_at) VALUES (?, ?, ?, ?, ?, NOW())',
                 [google_id, email, name, profile_pic, device_id]
             );
 

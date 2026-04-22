@@ -26,10 +26,18 @@ router.put('/users/:id/balance', adminController.updateUserBalance);
 router.delete('/users/:id', adminController.deleteUser);
 router.put('/profile/password', adminController.updatePassword);
 
+// Dashboard & Stats
+router.get('/stats', adminController.getDashboardStats);
+router.get('/transactions', adminController.getRecentTransactions);
+
 // Banner Routes
 router.get('/banners', adminController.getAllBanners);
 router.post('/banners', adminController.createBanner);
 router.put('/banners/:id', adminController.updateBanner);
 router.delete('/banners/:id', adminController.deleteBanner);
+
+// Account Deactivation Requests
+router.get('/delete-requests', adminController.getAccountDeleteRequests);
+router.put('/delete-requests/:id', adminController.updateDeleteRequestStatus);
 
 module.exports = router;

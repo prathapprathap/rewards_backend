@@ -41,6 +41,22 @@ module.exports = {
         COUNT_USERS: 'SELECT COUNT(*) as count FROM users',
         COUNT_TASKS: 'SELECT COUNT(*) as count FROM tasks',
         COUNT_OFFERS: 'SELECT COUNT(*) as count FROM offers',
+        COUNT_TODAY_LOGIN: 'SELECT COUNT(*) as count FROM users WHERE last_login_at >= CURDATE()',
+        COUNT_NEW_USERS_TODAY: 'SELECT COUNT(*) as count FROM users WHERE created_at >= CURDATE()',
+        COUNT_TODAY_LEADS: "SELECT COUNT(*) as count FROM wallet_transactions WHERE transaction_type IN ('offer', 'reward') AND created_at >= CURDATE()",
+        COUNT_ACTIVE_OFFERS: "SELECT COUNT(*) as count FROM offers WHERE status = 'Active'",
+        COUNT_PENDING_WITHDRAWALS: "SELECT COUNT(*) as count FROM withdrawals WHERE status = 'PENDING'",
+        COUNT_TODAY_WITHDRAWALS: 'SELECT COUNT(*) as count FROM withdrawals WHERE created_at >= CURDATE()',
+        SUM_TODAY_PAYOUTS: "SELECT SUM(amount) as sum FROM withdrawals WHERE status = 'APPROVED' AND created_at >= CURDATE()",
+        GET_RECENT_TRANSACTIONS: `
+            SELECT wt.*, u.email 
+            FROM wallet_transactions wt 
+            JOIN users u ON wt.user_id = u.id 
+            ORDER BY wt.created_at DESC 
+            LIMIT 500
+        `,
+        GET_ACCOUNT_DELETE_REQUESTS: 'SELECT * FROM account_delete_requests WHERE status = "PENDING" ORDER BY created_at DESC',
+        UPDATE_DELETE_REQUEST_STATUS: 'UPDATE account_delete_requests SET status = ? WHERE id = ?',
         LOGIN: 'SELECT * FROM admin_info WHERE username = ?',
         GET_WITHDRAWALS: `
       SELECT w.*, u.name, u.email 

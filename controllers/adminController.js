@@ -225,20 +225,42 @@ exports.updateOffer = async (req, res) => {
 // Dashboard Stats
 exports.getDashboardStats = async (req, res) => {
     try {
-        const [userCount] = await db.query(QUERIES.ADMIN.COUNT_USERS);
-        const [taskCount] = await db.query(QUERIES.ADMIN.COUNT_TASKS);
-        const [offerCount] = await db.query(QUERIES.ADMIN.COUNT_OFFERS);
+        const [[userCount]] = await db.query(QUERIES.ADMIN.COUNT_USERS);
+        const [[todayLogin]] = await db.query(QUERIES.ADMIN.COUNT_TODAY_LOGIN);
+        const [[newJoinedToday]] = await db.query(QUERIES.ADMIN.COUNT_NEW_USERS_TODAY);
+        const [[todayLeads]] = await db.query(QUERIES.ADMIN.COUNT_TODAY_LEADS);
+        const [[activeOffers]] = await db.query(QUERIES.ADMIN.COUNT_ACTIVE_OFFERS);
+        const [[pendingPayouts]] = await db.query(QUERIES.ADMIN.COUNT_PENDING_WITHDRAWALS);
+        const [[todayWithdrawals]] = await db.query(QUERIES.ADMIN.COUNT_TODAY_WITHDRAWALS);
+        const [[todayPayouts]] = await db.query(QUERIES.ADMIN.SUM_TODAY_PAYOUTS);
 
         res.status(200).json({
-            totalUsers: userCount[0].count,
-            totalTasks: taskCount[0].count,
-            totalOffers: offerCount[0].count,
+            totalUsers: userCount.count,
+            todayLogin: todayLogin.count,
+            newJoinedToday: newJoinedToday.count,
+            todayLeads: todayLeads.count,
+            activeOffer: activeOffers.count,
+            pendingPayouts: pendingPayouts.count,
+            todayWithdrawals: todayWithdrawals.count,
+            todayPayouts: todayPayouts.sum || 0,
         });
     } catch (error) {
         console.error('Error fetching stats:', error);
         res.status(500).json({ message: 'Server error' });
     }
 };
+
+// Recent Transactions
+exports.getRecentTransactions = async (req, res) => {
+    try {
+        const [rows] = await db.query(QUERIES.ADMIN.GET_RECENT_TRANSACTIONS);
+        res.status(200).json(rows);
+    } catch (error) {
+        console.error('Error fetching recent transactions:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
 
 // Admin Login
 exports.login = async (req, res) => {
@@ -545,6 +567,42 @@ exports.deleteBanner = async (req, res) => {
         res.status(200).json({ message: 'Banner deleted successfully' });
     } catch (error) {
         console.error('Error deleting banner:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+// Account Delete Requests
+exports.getAccountDeleteRequests = async (req, res) => {
+    try {
+        const [rows] = await db.query(QUERIES.ADMIN.GET_ACCOUNT_DELETE_REQUESTS);
+        res.status(200).json(rows);
+    } catch (error) {
+        console.error('Error fetching deactivation requests:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+exports.updateDeleteRequestStatus = async (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body; // CANCELLED or DELETED
+
+    try {
+        if (status === 'DELETED') {
+            const [request] = await db.query('SELECT user_id FROM account_delete_requests WHERE id = ?', [id]);
+            if (request.length > 0) {
+                // Delete the user first
+                await db.query(QUERIES.ADMIN.DELETE_USER, [request[0].user_id]);
+                // Then update request status
+                await db.query(QUERIES.ADMIN.UPDATE_DELETE_REQUEST_STATUS, [status, id]);
+                return res.status(200).json({ message: 'Account deleted and request updated.' });
+            } else {
+                return res.status(404).json({ message: 'Request not found.' });
+            }
+        } else {
+            await db.query(QUERIES.ADMIN.UPDATE_DELETE_REQUEST_STATUS, [status, id]);
+            res.status(200).json({ message: 'Request status updated.' });
+        }
+    } catch (error) {
+        console.error('Error updating deactivation request:', error);
         res.status(500).json({ message: 'Server error' });
     }
 };
