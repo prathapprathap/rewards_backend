@@ -351,6 +351,10 @@ async function handlePostback(req, res) {
 // Credit user wallet with multiple currency support
 async function creditUserWallet(userId, amount, currencyType, offerId, eventId) {
     try {
+        const normalizedCurrency = ['cash', 'coins', 'gems'].includes(currencyType)
+            ? currencyType
+            : 'cash';
+
         // 1. Fetch coin rate from settings
         const [settings] = await db.query(
             'SELECT setting_value FROM app_settings WHERE setting_key = ?',
@@ -360,9 +364,9 @@ async function creditUserWallet(userId, amount, currencyType, offerId, eventId) 
 
         // 2. Determine cash value
         let cashAmount = parseFloat(amount);
-        if (currencyType === 'coins') {
+        if (normalizedCurrency === 'coins') {
             cashAmount = cashAmount / coinRate;
-        } else if (currencyType === 'gems') {
+        } else if (normalizedCurrency === 'gems') {
             // Assume gems are 1:1 for now or add a gem rate later
             cashAmount = cashAmount;
         }
@@ -380,10 +384,12 @@ async function creditUserWallet(userId, amount, currencyType, offerId, eventId) 
             [balanceAfter, cashAmount, userId]
         );
 
-        // 4. Update breakdown (Ensure table keeps track of total cash from all sources)
+        // 4. Update breakdown in the reward's native currency.
         await db.query(
-            'INSERT INTO user_wallet_breakdown (user_id, cash) VALUES (?, ?) ON DUPLICATE KEY UPDATE cash = cash + ?',
-            [userId, cashAmount, cashAmount]
+            `INSERT INTO user_wallet_breakdown (user_id, ${normalizedCurrency})
+             VALUES (?, ?)
+             ON DUPLICATE KEY UPDATE ${normalizedCurrency} = ${normalizedCurrency} + VALUES(${normalizedCurrency})`,
+            [userId, parseFloat(amount)]
         );
 
         // 5. Record transaction
@@ -394,18 +400,18 @@ async function creditUserWallet(userId, amount, currencyType, offerId, eventId) 
             [
                 userId,
                 'offer_reward',
-                currencyType,
-                currencyType === 'coins' ? amount : cashAmount, // Log the original unit
+                normalizedCurrency,
+                parseFloat(amount),
                 balanceBefore,
                 balanceAfter,
                 offerId,
                 eventId,
-                `Offer compensation: ${amount} ${currencyType} (₹${cashAmount.toFixed(2)})`,
+                `Offer compensation: ${amount} ${normalizedCurrency} (₹${cashAmount.toFixed(2)})`,
                 'success'
             ]
         );
 
-        console.log(`💰 Credited ₹${cashAmount.toFixed(2)} (${amount} ${currencyType}) to user ${userId}`);
+        console.log(`💰 Credited ₹${cashAmount.toFixed(2)} (${amount} ${normalizedCurrency}) to user ${userId}`);
 
     } catch (error) {
         console.error('Error crediting wallet:', error);
@@ -479,13 +485,15 @@ async function getWalletBreakdown(req, res) {
         if (wallets.length === 0) {
             return res.json({
                 success: true,
-                wallet: { cash: 0 }
+                wallet: { coins: 0, gems: 0, cash: 0 }
             });
         }
 
         res.json({
             success: true,
             wallet: {
+                coins: parseFloat(wallets[0].coins) || 0,
+                gems: parseFloat(wallets[0].gems) || 0,
                 cash: parseFloat(wallets[0].cash) || 0
             }
         });
@@ -527,8 +535,17 @@ async function getTransactionHistory(req, res) {
 // Banners
 async function getBanners(req, res) {
     try {
-        const [banners] = await db.query('SELECT * FROM banners WHERE status = "Active" ORDER BY id DESC');
-        res.json({ success: true, banners });
+        const [banners] = await db.query(
+            'SELECT * FROM banners WHERE status = ? ORDER BY id DESC',
+            ['Active']
+        );
+        res.json({
+            success: true,
+            banners: banners.map((banner) => ({
+                ...banner,
+                click_url: banner.action_value || '',
+            })),
+        });
     } catch (error) {
         console.error('Error fetching banners:', error);
         res.status(500).json({ error: 'Failed to fetch banners' });

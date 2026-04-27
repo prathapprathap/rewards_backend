@@ -34,7 +34,7 @@ async function syncWalletWithTransactions(userId) {
         // Update users table balance (cash only)
         await connection.query(`
             UPDATE users 
-            SET balance = ?,
+            SET wallet_balance = ?,
                 total_earnings = ?
             WHERE id = ?
         `, [total_cash, total_cash, userId]);

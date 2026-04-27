@@ -1,5 +1,82 @@
 const db = require('../config/db');
 const QUERIES = require('../constants/queries');
+const fs = require('fs/promises');
+const path = require('path');
+
+function getPublicBaseUrl(req) {
+    const forwardedProto = req.headers['x-forwarded-proto'];
+    const protocol = (forwardedProto || req.protocol || 'http').split(',')[0].trim();
+    return `${protocol}://${req.get('host')}`;
+}
+
+function normalizeBannerLink(value) {
+    const trimmed = (value || '').toString().trim();
+    if (!trimmed) return '';
+    if (/^https?:\/\//i.test(trimmed)) return trimmed;
+    return `https://${trimmed}`;
+}
+
+function getBannerUploadPathFromUrl(imageUrl) {
+    if (!imageUrl || typeof imageUrl !== 'string') return null;
+    const marker = '/uploads/banners/';
+    const index = imageUrl.indexOf(marker);
+    if (index === -1) return null;
+    const fileName = imageUrl.slice(index + marker.length);
+    if (!fileName) return null;
+    return path.join(__dirname, '..', 'uploads', 'banners', fileName);
+}
+
+async function persistBannerImage(imagePayload, req) {
+    if (!imagePayload) return null;
+
+    let dataUrl = '';
+    let fileNameSeed = 'banner';
+
+    if (typeof imagePayload === 'string') {
+        dataUrl = imagePayload;
+    } else {
+        dataUrl =
+            imagePayload.dataUrl ||
+            imagePayload.data ||
+            imagePayload.base64 ||
+            '';
+        fileNameSeed = imagePayload.name || fileNameSeed;
+    }
+
+    if (!dataUrl.startsWith('data:image/') || !dataUrl.includes('base64,')) {
+        return null;
+    }
+
+    const mimeMatch = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/i);
+    const mimeType = mimeMatch ? mimeMatch[1].toLowerCase() : 'image/png';
+    const extensionMap = {
+        'image/jpeg': 'jpg',
+        'image/jpg': 'jpg',
+        'image/png': 'png',
+        'image/webp': 'webp',
+        'image/gif': 'gif',
+    };
+    const extension = extensionMap[mimeType] || 'png';
+    const safeSeed = fileNameSeed.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 24) || 'banner';
+    const fileName = `${Date.now()}-${safeSeed}.${extension}`;
+    const uploadDir = path.join(__dirname, '..', 'uploads', 'banners');
+    const base64Data = dataUrl.split('base64,')[1];
+
+    await fs.mkdir(uploadDir, { recursive: true });
+    await fs.writeFile(path.join(uploadDir, fileName), Buffer.from(base64Data, 'base64'));
+
+    return `${getPublicBaseUrl(req)}/uploads/banners/${fileName}`;
+}
+
+async function removeLocalBannerImage(imageUrl) {
+    const filePath = getBannerUploadPathFromUrl(imageUrl);
+    if (!filePath) return;
+    try {
+        await fs.unlink(filePath);
+    } catch (_) {
+        // Ignore missing files
+    }
+}
 
 // Get all users
 exports.getAllUsers = async (req, res) => {
@@ -290,6 +367,30 @@ exports.login = async (req, res) => {
     }
 };
 
+exports.getProfile = async (req, res) => {
+    try {
+        const [rows] = await db.query(
+            'SELECT id, username, name, email, created_at FROM admin_info ORDER BY id ASC LIMIT 1'
+        );
+
+        if (rows.length === 0) {
+            return res.status(404).json({ message: 'Admin profile not found' });
+        }
+
+        const admin = rows[0];
+        res.status(200).json({
+            id: admin.id,
+            username: admin.username,
+            name: admin.name || admin.username,
+            email: admin.email || 'admin@rewardmobi.xyz',
+            created_at: admin.created_at,
+        });
+    } catch (error) {
+        console.error('Error fetching admin profile:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
 // Get all withdrawals
 exports.getWithdrawals = async (req, res) => {
     try {
@@ -485,6 +586,114 @@ exports.updateUserBalance = async (req, res) => {
     }
 };
 
+exports.getUserDetails = async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const [[user]] = await db.query('SELECT * FROM users WHERE id = ?', [id]);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        const [[withdrawalStats]] = await db.query(
+            `SELECT
+                COUNT(*) AS total_withdrawals,
+                COALESCE(SUM(amount), 0) AS total_withdraw_amount,
+                COALESCE(SUM(CASE WHEN DATE(created_at) = CURDATE() THEN amount ELSE 0 END), 0) AS today_withdraw_amount
+             FROM withdrawals
+             WHERE user_id = ? AND status IN ('APPROVED', 'PAID')`,
+            [id]
+        );
+
+        const [[offerStats]] = await db.query(
+            `SELECT
+                COUNT(*) AS total_tasks
+             FROM offer_events
+             WHERE user_id = ? AND status = 'approved'`,
+            [id]
+        );
+
+        res.status(200).json({
+            ...user,
+            total_withdrawals: withdrawalStats.total_withdrawals || 0,
+            total_withdraw_amount: parseFloat(withdrawalStats.total_withdraw_amount) || 0,
+            today_withdraw_amount: parseFloat(withdrawalStats.today_withdraw_amount) || 0,
+            total_tasks: offerStats.total_tasks || 0,
+        });
+    } catch (error) {
+        console.error('Error fetching user details:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+exports.getUserTransactions = async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const [rows] = await db.query(
+            `SELECT *
+             FROM wallet_transactions
+             WHERE user_id = ?
+             ORDER BY created_at DESC`,
+            [id]
+        );
+        res.status(200).json(rows);
+    } catch (error) {
+        console.error('Error fetching user transactions:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+exports.getUserWithdrawals = async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const [rows] = await db.query(
+            `SELECT *
+             FROM withdrawals
+             WHERE user_id = ?
+             ORDER BY created_at DESC`,
+            [id]
+        );
+        res.status(200).json(rows);
+    } catch (error) {
+        console.error('Error fetching user withdrawals:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+exports.getTopReferrers = async (req, res) => {
+    try {
+        const [rows] = await db.query(`
+            SELECT
+                u.id,
+                u.name,
+                u.email,
+                u.device_id,
+                u.wallet_balance,
+                u.created_at,
+                u.referral_code,
+                u.referred_by,
+                COUNT(r.id) AS total_referrals
+            FROM users u
+            LEFT JOIN referrals r
+                ON r.referrer_id = u.id
+               AND r.status IN ('PENDING', 'COMPLETED')
+            GROUP BY
+                u.id, u.name, u.email, u.device_id, u.wallet_balance,
+                u.created_at, u.referral_code, u.referred_by
+            HAVING total_referrals > 0
+            ORDER BY total_referrals DESC, u.wallet_balance DESC
+            LIMIT 50
+        `);
+
+        res.status(200).json(rows);
+    } catch (error) {
+        console.error('Error fetching top referrers:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
 // Delete user
 exports.deleteUser = async (req, res) => {
     const { id } = req.params;
@@ -503,7 +712,17 @@ exports.updatePassword = async (req, res) => {
     const bcrypt = require('bcryptjs');
 
     try {
-        const [rows] = await db.query(QUERIES.ADMIN.LOGIN, ['admin']);
+        if (!currentPassword || !newPassword) {
+            return res.status(400).json({ message: 'Current password and new password are required' });
+        }
+
+        if (newPassword.length < 6) {
+            return res.status(400).json({ message: 'New password must be at least 6 characters long' });
+        }
+
+        const [rows] = await db.query(
+            'SELECT * FROM admin_info ORDER BY id ASC LIMIT 1'
+        );
         if (rows.length === 0) return res.status(404).json({ message: 'Admin not found' });
 
         const admin = rows[0];
@@ -511,7 +730,7 @@ exports.updatePassword = async (req, res) => {
         if (!isMatch) return res.status(401).json({ message: 'Incorrect current password' });
 
         const hashedPassword = await bcrypt.hash(newPassword, 10);
-        await db.query(QUERIES.ADMIN.UPDATE_ADMIN_PASSWORD, [hashedPassword]);
+        await db.query('UPDATE admin_info SET password = ? WHERE id = ?', [hashedPassword, admin.id]);
 
         res.status(200).json({ message: 'Password updated successfully' });
     } catch (error) {
@@ -524,19 +743,51 @@ exports.updatePassword = async (req, res) => {
 exports.getAllBanners = async (req, res) => {
     try {
         const [rows] = await db.query('SELECT * FROM banners ORDER BY id DESC');
-        res.status(200).json(rows);
+        res.status(200).json(
+            rows.map((row) => ({
+                ...row,
+                click_url: row.action_value || '',
+            }))
+        );
     } catch (error) {
         console.error('Error fetching banners:', error);
         res.status(500).json({ message: 'Server error' });
     }
 };
 
-exports.createBanner = async (req, res) => {
-    const { title, subtitle, image_url, action_type, action_value, status } = req.body;
+exports.uploadBannerImage = async (req, res) => {
     try {
+        const imageUrl = await persistBannerImage(req.body.image_file, req);
+        if (!imageUrl) {
+            return res.status(400).json({ message: 'Valid image file is required' });
+        }
+
+        res.status(201).json({
+            message: 'Banner image uploaded successfully',
+            image_url: imageUrl,
+        });
+    } catch (error) {
+        console.error('Error uploading banner image:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+exports.createBanner = async (req, res) => {
+    const { title, subtitle, image_url, image_file, action_value, click_url, link, status } = req.body;
+    try {
+        const resolvedImageUrl = (await persistBannerImage(image_file, req)) || image_url || '';
+        const resolvedLink = normalizeBannerLink(click_url || link || action_value);
+
         await db.query(
             'INSERT INTO banners (title, subtitle, image_url, action_type, action_value, status) VALUES (?, ?, ?, ?, ?, ?)',
-            [title, subtitle, image_url, action_type, action_value, status || 'Active']
+            [
+                title || '',
+                subtitle || '',
+                resolvedImageUrl,
+                'url',
+                resolvedLink,
+                status || 'Active'
+            ]
         );
         res.status(201).json({ message: 'Banner created successfully' });
     } catch (error) {
@@ -547,11 +798,35 @@ exports.createBanner = async (req, res) => {
 
 exports.updateBanner = async (req, res) => {
     const { id } = req.params;
-    const { title, subtitle, image_url, action_type, action_value, status } = req.body;
+    const { title, subtitle, image_url, image_file, action_value, click_url, link, status } = req.body;
     try {
+        const [existingRows] = await db.query('SELECT * FROM banners WHERE id = ?', [id]);
+        if (existingRows.length === 0) {
+            return res.status(404).json({ message: 'Banner not found' });
+        }
+
+        const existingBanner = existingRows[0];
+        const uploadedImageUrl = await persistBannerImage(image_file, req);
+        const resolvedImageUrl = uploadedImageUrl || image_url || existingBanner.image_url || '';
+        const resolvedLink = normalizeBannerLink(
+            click_url || link || action_value || existingBanner.action_value
+        );
+
+        if (uploadedImageUrl && existingBanner.image_url && uploadedImageUrl !== existingBanner.image_url) {
+            await removeLocalBannerImage(existingBanner.image_url);
+        }
+
         await db.query(
             'UPDATE banners SET title = ?, subtitle = ?, image_url = ?, action_type = ?, action_value = ?, status = ? WHERE id = ?',
-            [title, subtitle, image_url, action_type, action_value, status, id]
+            [
+                title ?? existingBanner.title ?? '',
+                subtitle ?? existingBanner.subtitle ?? '',
+                resolvedImageUrl,
+                'url',
+                resolvedLink,
+                status || existingBanner.status || 'Active',
+                id
+            ]
         );
         res.status(200).json({ message: 'Banner updated successfully' });
     } catch (error) {
@@ -563,7 +838,11 @@ exports.updateBanner = async (req, res) => {
 exports.deleteBanner = async (req, res) => {
     const { id } = req.params;
     try {
+        const [rows] = await db.query('SELECT image_url FROM banners WHERE id = ?', [id]);
         await db.query('DELETE FROM banners WHERE id = ?', [id]);
+        if (rows.length > 0) {
+            await removeLocalBannerImage(rows[0].image_url);
+        }
         res.status(200).json({ message: 'Banner deleted successfully' });
     } catch (error) {
         console.error('Error deleting banner:', error);

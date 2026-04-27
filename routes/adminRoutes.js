@@ -24,7 +24,12 @@ router.put('/promocodes/:id', adminController.updatePromoCode);
 router.delete('/promocodes/:id', adminController.deletePromoCode);
 router.put('/users/:id/balance', adminController.updateUserBalance);
 router.delete('/users/:id', adminController.deleteUser);
+router.get('/users/:id', adminController.getUserDetails);
+router.get('/users/:id/transactions', adminController.getUserTransactions);
+router.get('/users/:id/withdrawals', adminController.getUserWithdrawals);
+router.get('/top-referrers', adminController.getTopReferrers);
 router.put('/profile/password', adminController.updatePassword);
+router.get('/profile', adminController.getProfile);
 
 // Dashboard & Stats
 router.get('/stats', adminController.getDashboardStats);
@@ -32,6 +37,7 @@ router.get('/transactions', adminController.getRecentTransactions);
 
 // Banner Routes
 router.get('/banners', adminController.getAllBanners);
+router.post('/banners/upload', adminController.uploadBannerImage);
 router.post('/banners', adminController.createBanner);
 router.put('/banners/:id', adminController.updateBanner);
 router.delete('/banners/:id', adminController.deleteBanner);

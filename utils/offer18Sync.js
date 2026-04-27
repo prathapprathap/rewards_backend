@@ -189,10 +189,14 @@ async function syncConversions(report = 1) {
  * Credit user wallet (mirrors offer18Controller logic)
  */
 async function creditUserWallet(userId, amount, currencyType = 'cash', offerId, eventId) {
+    const normalizedCurrency = ['cash', 'coins', 'gems'].includes(currencyType)
+        ? currencyType
+        : 'cash';
+
     // Ensure wallet row exists
     await db.query(
-        `INSERT INTO user_wallet_breakdown (user_id, cash)
-         VALUES (?, 0)
+        `INSERT INTO user_wallet_breakdown (user_id, coins, gems, cash)
+         VALUES (?, 0, 0, 0)
          ON DUPLICATE KEY UPDATE user_id = user_id`,
         [userId]
     );
@@ -200,16 +204,16 @@ async function creditUserWallet(userId, amount, currencyType = 'cash', offerId, 
     const [wallets] = await db.query(
         'SELECT * FROM user_wallet_breakdown WHERE user_id = ?', [userId]
     );
-    const wallet = wallets[0] || { cash: 0 };
-    const balanceBefore = parseFloat(wallet[currencyType]) || 0;
+    const wallet = wallets[0] || { coins: 0, gems: 0, cash: 0 };
+    const balanceBefore = parseFloat(wallet[normalizedCurrency]) || 0;
     const balanceAfter = balanceBefore + parseFloat(amount);
 
     await db.query(
-        `UPDATE user_wallet_breakdown SET ${currencyType} = ? WHERE user_id = ?`,
+        `UPDATE user_wallet_breakdown SET ${normalizedCurrency} = ? WHERE user_id = ?`,
         [balanceAfter, userId]
     );
 
-    if (currencyType === 'cash') {
+    if (normalizedCurrency === 'cash') {
         await db.query(
             'UPDATE users SET wallet_balance = wallet_balance + ?, total_earnings = total_earnings + ? WHERE id = ?',
             [amount, amount, userId]
@@ -220,7 +224,7 @@ async function creditUserWallet(userId, amount, currencyType = 'cash', offerId, 
         `INSERT INTO wallet_transactions
         (user_id, transaction_type, currency_type, amount, balance_before, balance_after, offer_id, event_id, description)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [userId, 'offer_reward', currencyType, amount, balanceBefore, balanceAfter, offerId, eventId, `Offer18 sync: ${currencyType} ${amount}`]
+        [userId, 'offer_reward', normalizedCurrency, amount, balanceBefore, balanceAfter, offerId, eventId, `Offer18 sync: ${normalizedCurrency} ${amount}`]
     );
 }
 

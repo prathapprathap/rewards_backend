@@ -111,18 +111,39 @@ const initDB = async () => {
       CREATE TABLE IF NOT EXISTS admin_info (
         id INT AUTO_INCREMENT PRIMARY KEY,
         username VARCHAR(255) UNIQUE NOT NULL,
+        name VARCHAR(255) DEFAULT NULL,
+        email VARCHAR(255) DEFAULT NULL,
         password VARCHAR(255) NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    const adminMigrations = [
+      "ALTER TABLE admin_info ADD COLUMN name VARCHAR(255) DEFAULT NULL AFTER username",
+      "ALTER TABLE admin_info ADD COLUMN email VARCHAR(255) DEFAULT NULL AFTER name"
+    ];
+    for (const sql of adminMigrations) {
+      await runSafeQuery(sql);
+    }
 
     // Create default admin if not exists
     const [admins] = await promisePool.query('SELECT * FROM admin_info WHERE username = ?', ['admin']);
     if (admins.length === 0) {
       const bcrypt = require('bcryptjs');
       const hashedPassword = await bcrypt.hash('admin123', 10);
-      await promisePool.query('INSERT INTO admin_info (username, password) VALUES (?, ?)', ['admin', hashedPassword]);
+      await promisePool.query(
+        'INSERT INTO admin_info (username, name, email, password) VALUES (?, ?, ?, ?)',
+        ['admin', 'Admin', 'admin@rewardmobi.xyz', hashedPassword]
+      );
       console.log('Default admin created.');
+    } else {
+      await promisePool.query(
+        `UPDATE admin_info
+         SET name = COALESCE(NULLIF(name, ''), 'Admin'),
+             email = COALESCE(NULLIF(email, ''), 'admin@rewardmobi.xyz')
+         WHERE username = ?`,
+        ['admin']
+      );
     }
 
     await promisePool.query(`
