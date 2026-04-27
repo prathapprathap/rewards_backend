@@ -734,6 +734,43 @@ exports.redeemPromoCode = async (req, res) => {
 
 
 
+// Request account deactivation
+exports.requestAccountDelete = async (req, res) => {
+    const { userId } = req.params;
+    const { note } = req.body;
+
+    try {
+        // 1. Get user details for the request record
+        const [users] = await db.query(QUERIES.USER.GET_PROFILE_BY_ID, [userId]);
+        if (users.length === 0) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        const user = users[0];
+
+        // 2. Check if a request already exists
+        const [existing] = await db.query(QUERIES.USER.CHECK_PENDING_DELETE_REQUEST, [userId]);
+
+        if (existing.length > 0) {
+            return res.status(400).json({ message: 'A deactivation request is already pending for this account.' });
+        }
+
+        // 3. Insert request
+        await db.query(
+            QUERIES.USER.CREATE_DELETE_REQUEST,
+            [userId, user.email, user.wallet_balance, note || 'Requested via app']
+        );
+
+        return res.status(200).json({
+            success: true,
+            message: 'Your deactivation request has been submitted. Our team will process it within 7 days.'
+        });
+    } catch (error) {
+        console.error('Error in requestAccountDelete:', error);
+        return res.status(500).json({ message: 'Server error' });
+    }
+};
+
 // Get app settings
 exports.getAppSettings = async (req, res) => {
     try {
