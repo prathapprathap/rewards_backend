@@ -712,8 +712,10 @@ exports.updateUser = async (req, res) => {
     const {
         name, email, upi_id, telegram_id,
         device_id, referral_code, referred_by,
-        wallet_balance, total_earnings, referral_earnings
+        wallet_balance, total_earnings, referral_earnings,
+        is_blocked
     } = req.body;
+
 
     try {
         const [[existing]] = await db.query('SELECT id FROM users WHERE id = ?', [id]);
@@ -734,6 +736,7 @@ exports.updateUser = async (req, res) => {
         if (wallet_balance !== undefined)    { fields.push('wallet_balance = ?');    values.push(parseFloat(wallet_balance)); }
         if (total_earnings !== undefined)    { fields.push('total_earnings = ?');    values.push(parseFloat(total_earnings)); }
         if (referral_earnings !== undefined) { fields.push('referral_earnings = ?'); values.push(parseFloat(referral_earnings)); }
+        if (is_blocked !== undefined)        { fields.push('is_blocked = ?');       values.push(is_blocked ? 1 : 0); }
 
         if (fields.length === 0) {
             return res.status(400).json({ message: 'No fields to update' });

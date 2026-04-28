@@ -66,6 +66,14 @@ exports.loginWithGoogle = async (req, res) => {
                 }
             }
 
+            // Check if blocked
+            if (user.is_blocked === 1) {
+                return res.status(403).json({
+                    message: 'Your account has been blocked by the admin. Please contact support.',
+                    error_code: 'ACCOUNT_BLOCKED'
+                });
+            }
+
             // Update last login
             await db.query('UPDATE users SET last_login_at = NOW() WHERE id = ?', [user.id]);
             user.last_login_at = new Date();
