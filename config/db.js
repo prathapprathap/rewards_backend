@@ -60,7 +60,9 @@ const initDB = async () => {
       "ALTER TABLE users ADD COLUMN last_checkin_date DATE",
       "ALTER TABLE users ADD COLUMN checkin_streak INT DEFAULT 0",
       "ALTER TABLE users ADD COLUMN upi_id VARCHAR(255)",
+      "ALTER TABLE users ADD COLUMN is_blocked TINYINT(1) DEFAULT 0",
     ];
+
     for (const sql of userMigrations) {
       await runSafeQuery(sql);
     }
@@ -239,6 +241,36 @@ const initDB = async () => {
     // Promocode Migrations
     await runSafeQuery("ALTER TABLE promocodes ADD COLUMN min_offers INT DEFAULT 0");
     await runSafeQuery("ALTER TABLE promocodes ADD COLUMN min_referrals INT DEFAULT 0");
+
+    await promisePool.query(`
+      CREATE TABLE IF NOT EXISTS account_delete_requests (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        email VARCHAR(255) NOT NULL,
+        balance DECIMAL(10, 2) DEFAULT 0.00,
+        note TEXT,
+        status ENUM('PENDING', 'CANCELLED', 'DELETED') DEFAULT 'PENDING',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
+    await promisePool.query(`
+      CREATE TABLE IF NOT EXISTS user_payment_accounts (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        account_type ENUM('upi', 'bank') NOT NULL,
+        upi_id VARCHAR(255),
+        bank_name VARCHAR(255),
+        account_holder VARCHAR(255),
+        account_number VARCHAR(255),
+        ifsc_code VARCHAR(100),
+        is_primary TINYINT(1) DEFAULT 0,
+        verified TINYINT(1) DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
 
     await promisePool.query(`
       CREATE TABLE IF NOT EXISTS used_promo_codes (
