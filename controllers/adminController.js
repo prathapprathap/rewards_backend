@@ -706,10 +706,14 @@ exports.deleteUser = async (req, res) => {
     }
 };
 
-// Update user details (admin)
+// Update user details (admin) — covers all editable columns in the users table
 exports.updateUser = async (req, res) => {
     const { id } = req.params;
-    const { name, email, phone, upi_id, status } = req.body;
+    const {
+        name, email, upi_id, telegram_id,
+        device_id, referral_code, referred_by,
+        wallet_balance, total_earnings, referral_earnings
+    } = req.body;
 
     try {
         const [[existing]] = await db.query('SELECT id FROM users WHERE id = ?', [id]);
@@ -720,11 +724,16 @@ exports.updateUser = async (req, res) => {
         const fields = [];
         const values = [];
 
-        if (name !== undefined)   { fields.push('name = ?');   values.push(name); }
-        if (email !== undefined)  { fields.push('email = ?');  values.push(email); }
-        if (phone !== undefined)  { fields.push('phone = ?');  values.push(phone); }
-        if (upi_id !== undefined) { fields.push('upi_id = ?'); values.push(upi_id); }
-        if (status !== undefined) { fields.push('status = ?'); values.push(status); }
+        if (name !== undefined)              { fields.push('name = ?');              values.push(name); }
+        if (email !== undefined)             { fields.push('email = ?');             values.push(email); }
+        if (upi_id !== undefined)            { fields.push('upi_id = ?');            values.push(upi_id); }
+        if (telegram_id !== undefined)       { fields.push('telegram_id = ?');       values.push(telegram_id); }
+        if (device_id !== undefined)         { fields.push('device_id = ?');         values.push(device_id); }
+        if (referral_code !== undefined)     { fields.push('referral_code = ?');     values.push(referral_code); }
+        if (referred_by !== undefined)       { fields.push('referred_by = ?');       values.push(referred_by); }
+        if (wallet_balance !== undefined)    { fields.push('wallet_balance = ?');    values.push(parseFloat(wallet_balance)); }
+        if (total_earnings !== undefined)    { fields.push('total_earnings = ?');    values.push(parseFloat(total_earnings)); }
+        if (referral_earnings !== undefined) { fields.push('referral_earnings = ?'); values.push(parseFloat(referral_earnings)); }
 
         if (fields.length === 0) {
             return res.status(400).json({ message: 'No fields to update' });
@@ -919,3 +928,111 @@ exports.updateDeleteRequestStatus = async (req, res) => {
         res.status(500).json({ message: 'Server error' });
     }
 };
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Payment Accounts  (user_payment_accounts table)
+ * ───────────────────────────────────────────────────────────────────────── */
+
+// GET /users/:id/payment-accounts
+exports.getUserPaymentAccounts = async (req, res) => {
+    const { id } = req.params;
+    try {
+        const [rows] = await db.query(
+            'SELECT * FROM user_payment_accounts WHERE user_id = ? ORDER BY is_primary DESC, created_at DESC',
+            [id]
+        );
+        res.status(200).json(rows);
+    } catch (error) {
+        console.error('Error fetching payment accounts:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// POST /users/:id/payment-accounts
+exports.createPaymentAccount = async (req, res) => {
+    const { id: user_id } = req.params;
+    const { account_type, upi_id, bank_name, account_holder, account_number, ifsc_code, is_primary } = req.body;
+
+    if (!account_type || !['upi', 'bank'].includes(account_type)) {
+        return res.status(400).json({ message: 'account_type must be "upi" or "bank"' });
+    }
+    if (account_type === 'upi' && !upi_id) {
+        return res.status(400).json({ message: 'upi_id is required for UPI accounts' });
+    }
+    if (account_type === 'bank' && (!account_number || !ifsc_code)) {
+        return res.status(400).json({ message: 'account_number and ifsc_code are required for bank accounts' });
+    }
+
+    try {
+        // If setting as primary, clear existing primary for this user
+        if (is_primary) {
+            await db.query('UPDATE user_payment_accounts SET is_primary = 0 WHERE user_id = ?', [user_id]);
+        }
+
+        const [result] = await db.query(
+            `INSERT INTO user_payment_accounts
+             (user_id, account_type, upi_id, bank_name, account_holder, account_number, ifsc_code, is_primary)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [user_id, account_type, upi_id || null, bank_name || null,
+             account_holder || null, account_number || null, ifsc_code || null, is_primary ? 1 : 0]
+        );
+        res.status(201).json({ message: 'Payment account added', id: result.insertId });
+    } catch (error) {
+        console.error('Error creating payment account:', error);
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+};
+
+// PUT /payment-accounts/:accountId
+exports.updatePaymentAccount = async (req, res) => {
+    const { accountId } = req.params;
+    const { account_type, upi_id, bank_name, account_holder, account_number, ifsc_code, is_primary, verified } = req.body;
+
+    try {
+        const [[existing]] = await db.query('SELECT * FROM user_payment_accounts WHERE id = ?', [accountId]);
+        if (!existing) return res.status(404).json({ message: 'Payment account not found' });
+
+        // If setting as primary, clear others for same user
+        if (is_primary) {
+            await db.query('UPDATE user_payment_accounts SET is_primary = 0 WHERE user_id = ?', [existing.user_id]);
+        }
+
+        await db.query(
+            `UPDATE user_payment_accounts SET
+               account_type    = COALESCE(?, account_type),
+               upi_id          = COALESCE(?, upi_id),
+               bank_name       = COALESCE(?, bank_name),
+               account_holder  = COALESCE(?, account_holder),
+               account_number  = COALESCE(?, account_number),
+               ifsc_code       = COALESCE(?, ifsc_code),
+               is_primary      = COALESCE(?, is_primary),
+               verified        = COALESCE(?, verified)
+             WHERE id = ?`,
+            [account_type ?? null, upi_id ?? null, bank_name ?? null,
+             account_holder ?? null, account_number ?? null, ifsc_code ?? null,
+             is_primary !== undefined ? (is_primary ? 1 : 0) : null,
+             verified   !== undefined ? (verified   ? 1 : 0) : null,
+             accountId]
+        );
+        res.status(200).json({ message: 'Payment account updated' });
+    } catch (error) {
+        console.error('Error updating payment account:', error);
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+};
+
+// DELETE /payment-accounts/:accountId
+exports.deletePaymentAccount = async (req, res) => {
+    const { accountId } = req.params;
+    try {
+        const [[existing]] = await db.query('SELECT id FROM user_payment_accounts WHERE id = ?', [accountId]);
+        if (!existing) return res.status(404).json({ message: 'Payment account not found' });
+
+        await db.query('DELETE FROM user_payment_accounts WHERE id = ?', [accountId]);
+        res.status(200).json({ message: 'Payment account deleted' });
+    } catch (error) {
+        console.error('Error deleting payment account:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+

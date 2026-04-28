@@ -47,4 +47,11 @@ router.delete('/banners/:id', adminController.deleteBanner);
 router.get('/delete-requests', adminController.getAccountDeleteRequests);
 router.put('/delete-requests/:id', adminController.updateDeleteRequestStatus);
 
+// Payment Accounts (Bank / UPI)
+router.get('/users/:id/payment-accounts',  adminController.getUserPaymentAccounts);
+router.post('/users/:id/payment-accounts', adminController.createPaymentAccount);
+router.put('/payment-accounts/:accountId',    adminController.updatePaymentAccount);
+router.delete('/payment-accounts/:accountId', adminController.deletePaymentAccount);
+
 module.exports = router;
+
