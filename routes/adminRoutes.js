@@ -23,6 +23,7 @@ router.post('/promocodes', adminController.createPromoCode);
 router.put('/promocodes/:id', adminController.updatePromoCode);
 router.delete('/promocodes/:id', adminController.deletePromoCode);
 router.put('/users/:id/balance', adminController.updateUserBalance);
+router.put('/users/:id', adminController.updateUser);
 router.delete('/users/:id', adminController.deleteUser);
 router.get('/users/:id', adminController.getUserDetails);
 router.get('/users/:id/transactions', adminController.getUserTransactions);

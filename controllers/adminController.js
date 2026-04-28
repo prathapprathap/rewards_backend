@@ -706,6 +706,40 @@ exports.deleteUser = async (req, res) => {
     }
 };
 
+// Update user details (admin)
+exports.updateUser = async (req, res) => {
+    const { id } = req.params;
+    const { name, email, phone, upi_id, status } = req.body;
+
+    try {
+        const [[existing]] = await db.query('SELECT id FROM users WHERE id = ?', [id]);
+        if (!existing) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        const fields = [];
+        const values = [];
+
+        if (name !== undefined)   { fields.push('name = ?');   values.push(name); }
+        if (email !== undefined)  { fields.push('email = ?');  values.push(email); }
+        if (phone !== undefined)  { fields.push('phone = ?');  values.push(phone); }
+        if (upi_id !== undefined) { fields.push('upi_id = ?'); values.push(upi_id); }
+        if (status !== undefined) { fields.push('status = ?'); values.push(status); }
+
+        if (fields.length === 0) {
+            return res.status(400).json({ message: 'No fields to update' });
+        }
+
+        values.push(id);
+        await db.query(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`, values);
+
+        res.status(200).json({ message: 'User updated successfully' });
+    } catch (error) {
+        console.error('Error updating user:', error);
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+};
+
 // Update Password
 exports.updatePassword = async (req, res) => {
     const { currentPassword, newPassword } = req.body;
