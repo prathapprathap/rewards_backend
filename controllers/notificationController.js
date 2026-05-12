@@ -173,6 +173,7 @@ exports.versionCheck = async (req, res) => {
             'maintenance_message',
             'latest_version',
             'min_supported_version',
+            'update_mode',
             'update_message',
             'update_url',
             'apk_download_url',
@@ -188,6 +189,14 @@ exports.versionCheck = async (req, res) => {
 
         const latest = s.latest_version || '0.0.0';
         const min = s.min_supported_version || '0.0.0';
+        const updateModeOn = (s.update_mode || 'Off') === 'On';
+
+        // When Update Mode is ON, any client below `latest_version` is
+        // force-updated (legacy behavior). Otherwise only clients below
+        // `min_supported_version` are force-updated.
+        const belowMin = semverLt(current, min);
+        const belowLatest = semverLt(current, latest);
+        const updateRequired = belowMin || (updateModeOn && belowLatest);
 
         res.status(200).json({
             maintenance_mode: (s.maintenance_mode || 'Off') === 'On',
@@ -195,8 +204,9 @@ exports.versionCheck = async (req, res) => {
             latest_version: latest,
             min_supported_version: min,
             current_version: current,
-            update_required: semverLt(current, min),
-            update_available: semverLt(current, latest),
+            update_mode: updateModeOn,
+            update_required: updateRequired,
+            update_available: belowLatest && !updateRequired,
             update_message: s.update_message || '',
             update_url: s.update_url || s.apk_download_url || '',
         });

@@ -42,12 +42,18 @@ function init() {
 async function sendPush(tokens, { title, body, imageUrl, data }) {
     const validTokens = (tokens || []).filter(Boolean);
     if (validTokens.length === 0) {
-        return { successCount: 0, failureCount: 0, invalidTokens: [], skipped: true };
+        return {
+            successCount: 0, failureCount: 0, invalidTokens: [],
+            skipped: true, reason: 'No FCM tokens registered for the selected recipients',
+        };
     }
     const a = init();
     if (!a) {
         console.warn('[fcm] Skipping push — Firebase Admin not configured:', initError);
-        return { successCount: 0, failureCount: 0, invalidTokens: [], skipped: true };
+        return {
+            successCount: 0, failureCount: 0, invalidTokens: [],
+            skipped: true, reason: 'Firebase Admin not configured on server: ' + (initError || 'unknown'),
+        };
     }
 
     const message = {
