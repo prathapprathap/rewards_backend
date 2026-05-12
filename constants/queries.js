@@ -17,12 +17,12 @@ module.exports = {
         GET_USER_BY_REFERRAL_CODE: 'SELECT id FROM users WHERE referral_code = ?',
         SET_REFERRED_BY: 'UPDATE users SET referral_code = ? WHERE id = ?',
         ADD_REFERRAL_EARNINGS: 'UPDATE users SET wallet_balance = wallet_balance + ?, total_earnings = total_earnings + ?, referral_earnings = referral_earnings + ? WHERE id = ?',
-        GET_REFERRAL_STATS: 'SELECT COUNT(*) as total_referrals, SUM(CASE WHEN status = "COMPLETED" THEN 1 ELSE 0 END) as successful_referrals, SUM(commission_earned) as total_commission FROM referrals WHERE referrer_id = ?',
+        GET_REFERRAL_STATS: "SELECT COUNT(*) as total_referrals, SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) as successful_referrals, SUM(commission_earned) as total_commission FROM referrals WHERE referrer_id = ?",
         CREATE_REFERRAL: 'INSERT INTO referrals (referrer_id, referred_user_id) VALUES (?, ?)',
-        MARK_REFERRAL_COMPLETED: 'UPDATE referrals SET status = "COMPLETED", commission_earned = ?, completed_at = NOW() WHERE referred_user_id = ? AND status = "PENDING"',
-        GET_REFERRER_BY_REFERRED_USER: 'SELECT r.referrer_id, u.referral_code FROM referrals r JOIN users u ON r.referrer_id = u.id WHERE r.referred_user_id = ? AND r.status = "PENDING"',
-        CHECK_PENDING_DELETE_REQUEST: 'SELECT id FROM account_delete_requests WHERE user_id = ? AND status = "PENDING"',
-        CREATE_DELETE_REQUEST: 'INSERT INTO account_delete_requests (user_id, email, balance, note, status) VALUES (?, ?, ?, ?, "PENDING")',
+        MARK_REFERRAL_COMPLETED: "UPDATE referrals SET status = 'COMPLETED', commission_earned = ?, completed_at = NOW() WHERE referred_user_id = ? AND status = 'PENDING'",
+        GET_REFERRER_BY_REFERRED_USER: "SELECT r.referrer_id, u.referral_code FROM referrals r JOIN users u ON r.referrer_id = u.id WHERE r.referred_user_id = ? AND r.status = 'PENDING'",
+        CHECK_PENDING_DELETE_REQUEST: "SELECT id FROM account_delete_requests WHERE user_id = ? AND status = 'PENDING'",
+        CREATE_DELETE_REQUEST: "INSERT INTO account_delete_requests (user_id, email, balance, note, status) VALUES (?, ?, ?, ?, 'PENDING')",
     },
     ADMIN: {
         GET_ALL_USERS: 'SELECT * FROM users ORDER BY created_at DESC',
@@ -57,7 +57,7 @@ module.exports = {
             ORDER BY wt.created_at DESC 
             LIMIT 500
         `,
-        GET_ACCOUNT_DELETE_REQUESTS: 'SELECT * FROM account_delete_requests WHERE status = "PENDING" ORDER BY created_at DESC',
+        GET_ACCOUNT_DELETE_REQUESTS: "SELECT * FROM account_delete_requests WHERE status = 'PENDING' ORDER BY created_at DESC",
         UPDATE_DELETE_REQUEST_STATUS: 'UPDATE account_delete_requests SET status = ? WHERE id = ?',
         LOGIN: 'SELECT * FROM admin_info WHERE username = ?',
         GET_WITHDRAWALS: `
