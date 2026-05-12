@@ -44,13 +44,13 @@ exports.createNotification = async (req, res) => {
         let tokens = [];
         if (target === 'user') {
             const [rows] = await db.query(
-                'SELECT fcm_token FROM users WHERE id = ? AND fcm_token IS NOT NULL AND fcm_token != ""',
+                "SELECT fcm_token FROM users WHERE id = ? AND fcm_token IS NOT NULL AND fcm_token != ''",
                 [target_user_id]
             );
             tokens = rows.map(r => r.fcm_token);
         } else {
             const [rows] = await db.query(
-                'SELECT fcm_token FROM users WHERE fcm_token IS NOT NULL AND fcm_token != ""'
+                "SELECT fcm_token FROM users WHERE fcm_token IS NOT NULL AND fcm_token != ''"
             );
             tokens = rows.map(r => r.fcm_token);
         }
