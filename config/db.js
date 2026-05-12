@@ -61,6 +61,8 @@ const initDB = async () => {
       "ALTER TABLE users ADD COLUMN checkin_streak INT DEFAULT 0",
       "ALTER TABLE users ADD COLUMN upi_id VARCHAR(255)",
       "ALTER TABLE users ADD COLUMN is_blocked TINYINT(1) DEFAULT 0",
+      "ALTER TABLE users ADD COLUMN fcm_token VARCHAR(512) DEFAULT NULL",
+      "ALTER TABLE users ADD COLUMN referral_count_adjustment INT DEFAULT 0",
     ];
 
     for (const sql of userMigrations) {
@@ -350,6 +352,11 @@ const initDB = async () => {
       ['show_telegram_card', 'On', 'Show or hide the featured Telegram reward card'],
       ['telegram_bot_token', '', 'Telegram Bot API Token (from @BotFather)'],
       ['telegram_chat_id', '', 'Telegram Channel/Group ID (e.g. @yourchannel)'],
+      ['maintenance_message', 'We are performing scheduled maintenance. Please check back soon.', 'Message shown when maintenance_mode is On'],
+      ['latest_version', '1.2.0', 'Latest published app version (semver)'],
+      ['min_supported_version', '1.0.0', 'Minimum app version allowed to use the app (below this is force update)'],
+      ['update_message', 'A new version of the app is available. Please update to enjoy new features.', 'Message shown in update prompt'],
+      ['update_url', '', 'Play Store / APK URL opened on update tap'],
     ];
 
     for (const [key, value, description] of defaultSettings) {
@@ -498,6 +505,33 @@ const initDB = async () => {
         referral_code VARCHAR(10) NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         INDEX idx_attribution (ip_address, created_at)
+      )
+    `);
+
+    // Notifications
+    await promisePool.query(`
+      CREATE TABLE IF NOT EXISTS notifications (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        title VARCHAR(255) NOT NULL,
+        body TEXT NOT NULL,
+        image_url VARCHAR(512) DEFAULT NULL,
+        action_url VARCHAR(512) DEFAULT NULL,
+        target ENUM('all', 'user') DEFAULT 'all',
+        target_user_id INT DEFAULT NULL,
+        sent_count INT DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await promisePool.query(`
+      CREATE TABLE IF NOT EXISTS user_notification_reads (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        notification_id INT NOT NULL,
+        read_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (notification_id) REFERENCES notifications(id) ON DELETE CASCADE,
+        UNIQUE KEY uniq_user_notif (user_id, notification_id)
       )
     `);
 

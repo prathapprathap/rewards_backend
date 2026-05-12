@@ -674,14 +674,16 @@ exports.getTopReferrers = async (req, res) => {
                 u.created_at,
                 u.referral_code,
                 u.referred_by,
-                COUNT(r.id) AS total_referrals
+                COALESCE(u.referral_count_adjustment, 0) AS referral_count_adjustment,
+                (COUNT(r.id) + COALESCE(u.referral_count_adjustment, 0)) AS total_referrals,
+                COUNT(r.id) AS real_referrals
             FROM users u
             LEFT JOIN referrals r
                 ON r.referrer_id = u.id
                AND r.status IN ('PENDING', 'COMPLETED')
             GROUP BY
                 u.id, u.name, u.email, u.device_id, u.wallet_balance,
-                u.created_at, u.referral_code, u.referred_by
+                u.created_at, u.referral_code, u.referred_by, u.referral_count_adjustment
             HAVING total_referrals > 0
             ORDER BY total_referrals DESC, u.wallet_balance DESC
             LIMIT 50
@@ -691,6 +693,44 @@ exports.getTopReferrers = async (req, res) => {
     } catch (error) {
         console.error('Error fetching top referrers:', error);
         res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// Update a user's referral count adjustment (admin can boost the displayed count).
+// Body: { total_referrals: number } — we compute the adjustment as the delta
+// between the requested total and the real count from the referrals table.
+exports.updateReferralCount = async (req, res) => {
+    const { id } = req.params;
+    const { total_referrals } = req.body || {};
+
+    const requestedTotal = parseInt(total_referrals, 10);
+    if (Number.isNaN(requestedTotal) || requestedTotal < 0) {
+        return res.status(400).json({ message: 'total_referrals must be a non-negative integer' });
+    }
+
+    try {
+        const [[real]] = await db.query(
+            `SELECT COUNT(*) AS cnt FROM referrals
+              WHERE referrer_id = ? AND status IN ('PENDING', 'COMPLETED')`,
+            [id]
+        );
+        const realCount = parseInt(real.cnt || 0, 10);
+        const adjustment = requestedTotal - realCount;
+
+        await db.query(
+            'UPDATE users SET referral_count_adjustment = ? WHERE id = ?',
+            [adjustment, id]
+        );
+
+        res.status(200).json({
+            message: 'Referral count updated',
+            real_referrals: realCount,
+            adjustment,
+            total_referrals: requestedTotal,
+        });
+    } catch (error) {
+        console.error('updateReferralCount:', error);
+        res.status(500).json({ message: 'Server error: ' + error.message });
     }
 };
 
@@ -754,7 +794,7 @@ exports.updateUser = async (req, res) => {
 
 // Update Password
 exports.updatePassword = async (req, res) => {
-    const { currentPassword, newPassword } = req.body;
+    const { currentPassword, newPassword, username } = req.body;
     const bcrypt = require('bcryptjs');
 
     try {
@@ -766,22 +806,40 @@ exports.updatePassword = async (req, res) => {
             return res.status(400).json({ message: 'New password must be at least 6 characters long' });
         }
 
-        const [rows] = await db.query(
-            'SELECT * FROM admin_info ORDER BY id ASC LIMIT 1'
-        );
+        // Prefer the admin row matching the logged-in username; fall back to
+        // the lowest-id row for legacy clients that don't send the username.
+        let rows;
+        if (username) {
+            [rows] = await db.query('SELECT * FROM admin_info WHERE username = ? LIMIT 1', [username]);
+        }
+        if (!rows || rows.length === 0) {
+            [rows] = await db.query('SELECT * FROM admin_info ORDER BY id ASC LIMIT 1');
+        }
         if (rows.length === 0) return res.status(404).json({ message: 'Admin not found' });
 
         const admin = rows[0];
         const isMatch = await bcrypt.compare(currentPassword, admin.password);
-        if (!isMatch) return res.status(401).json({ message: 'Incorrect current password' });
+        if (!isMatch) {
+            console.warn(`[updatePassword] Current password mismatch for admin id=${admin.id} username=${admin.username}`);
+            return res.status(401).json({ message: 'Incorrect current password' });
+        }
 
         const hashedPassword = await bcrypt.hash(newPassword, 10);
-        await db.query('UPDATE admin_info SET password = ? WHERE id = ?', [hashedPassword, admin.id]);
+        const [result] = await db.query(
+            'UPDATE admin_info SET password = ? WHERE id = ?',
+            [hashedPassword, admin.id]
+        );
 
-        res.status(200).json({ message: 'Password updated successfully' });
+        if (!result.affectedRows) {
+            console.error('[updatePassword] UPDATE matched no rows for admin id=' + admin.id);
+            return res.status(500).json({ message: 'Update did not affect any row' });
+        }
+
+        console.log(`[updatePassword] Password updated for admin id=${admin.id} username=${admin.username}`);
+        res.status(200).json({ message: 'Password updated successfully', admin_id: admin.id });
     } catch (error) {
         console.error('Error updating password:', error);
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ message: 'Server error: ' + error.message });
     }
 };
 

@@ -260,14 +260,19 @@ async function handlePostback(req, res) {
             return res.status(200).send('OK: Already processed for this click');
         }
 
-        // Handle Offer18 status: default to approved if missing or placeholder
-        const cleanStatus = (status || '').toLowerCase();
-        const isApproved = cleanStatus === 'approved' ||
-            cleanStatus === 'completed' ||
-            cleanStatus === '{status}' || // Offer18 default placeholder
-            !status;                      // Missing status = assume success if postback fired
+        // Handle Offer18 / generic postback status. Treat any value that isn't
+        // explicitly a rejection as approved — networks send wildly inconsistent
+        // values ("1", "success", "confirmed", "paid", etc) and we don't want
+        // money to silently sit in 'pending'.
+        const cleanStatus = (status || '').toString().trim().toLowerCase();
+        const rejectedSet = new Set([
+            'rejected', 'reject', 'failed', 'fail', 'declined',
+            'reversed', 'chargeback', 'fraud', '0', 'false', 'no',
+        ]);
+        const isApproved = !rejectedSet.has(cleanStatus);
 
         const eventStatus = isApproved ? 'approved' : 'pending';
+        console.log(`   ↳ Status: raw="${status}" → ${eventStatus}`);
 
         // Record the event
         const [eventResult] = await db.query(

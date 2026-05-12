@@ -2,9 +2,16 @@ const express = require('express');
 const router = express.Router();
 const userController = require('../controllers/userController');
 const referralController = require('../controllers/referralController');
+const notificationController = require('../controllers/notificationController');
 
 // ── Static / specific routes FIRST (before :param routes) ─────────────────────
 router.get('/app/settings', userController.getAppSettings);
+router.get('/app/version-check', notificationController.versionCheck);
+
+// Notifications & FCM
+router.post('/:userId/fcm-token', notificationController.registerFcmToken);
+router.get('/:userId/notifications', notificationController.getUserNotifications);
+router.post('/:userId/notifications/:id/read', notificationController.markNotificationRead);
 router.post('/google-login', userController.loginWithGoogle);
 router.get('/spins/:userId', userController.getUserSpins);
 router.post('/spins/:userId/use', userController.useSpin);

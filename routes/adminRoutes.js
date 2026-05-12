@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/adminController');
+const notificationController = require('../controllers/notificationController');
 
 router.post('/login', adminController.login);
 router.get('/users', adminController.getAllUsers);
@@ -23,6 +24,7 @@ router.post('/promocodes', adminController.createPromoCode);
 router.put('/promocodes/:id', adminController.updatePromoCode);
 router.delete('/promocodes/:id', adminController.deletePromoCode);
 router.put('/users/:id/balance', adminController.updateUserBalance);
+router.put('/users/:id/referral-count', adminController.updateReferralCount);
 router.put('/users/:id', adminController.updateUser);
 router.delete('/users/:id', adminController.deleteUser);
 router.get('/users/:id', adminController.getUserDetails);
@@ -46,6 +48,11 @@ router.delete('/banners/:id', adminController.deleteBanner);
 // Account Deactivation Requests
 router.get('/delete-requests', adminController.getAccountDeleteRequests);
 router.put('/delete-requests/:id', adminController.updateDeleteRequestStatus);
+
+// Notifications (Push + In-app)
+router.get('/notifications', notificationController.listAdminNotifications);
+router.post('/notifications', notificationController.createNotification);
+router.delete('/notifications/:id', notificationController.deleteNotification);
 
 // Payment Accounts (Bank / UPI)
 router.get('/users/:id/payment-accounts',  adminController.getUserPaymentAccounts);
