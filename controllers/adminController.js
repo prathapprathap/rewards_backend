@@ -146,6 +146,7 @@ exports.createOffer = async (req, res) => {
             description = '', image_url = '',
             refer_payout = '1st Event', status = 'Active',
             side_label_color = '',
+            requires_screenshot = 0,
             events = []  // array of { event_id, event_name, points, currency_type }
         } = req.body;
 
@@ -153,7 +154,8 @@ exports.createOffer = async (req, res) => {
             QUERIES.ADMIN.CREATE_OFFER,
             [offer_name, offer_id, side_label, side_label_color, heading, history_name, offer_url,
                 tracking_link, amount, currency_type, event_name,
-                description, image_url, refer_payout, status]
+                description, image_url, refer_payout, status,
+                requires_screenshot ? 1 : 0]
         );
 
         const newOfferId = result.insertId;
@@ -248,6 +250,7 @@ exports.updateOffer = async (req, res) => {
             currency_type = 'cash', event_name = '',
             description = '', image_url = '',
             refer_payout = '1st Event', status = 'Active',
+            requires_screenshot = 0,
             events = []
         } = req.body;
 
@@ -256,7 +259,8 @@ exports.updateOffer = async (req, res) => {
             [offer_name, offer_id, side_label, side_label_color, heading, history_name,
                 offer_url, tracking_link, amount,
                 currency_type, event_name, description,
-                image_url, refer_payout, status, id]
+                image_url, refer_payout, status,
+                requires_screenshot ? 1 : 0, id]
         );
 
         // Replace event steps if provided

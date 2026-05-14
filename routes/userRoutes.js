@@ -3,6 +3,7 @@ const router = express.Router();
 const userController = require('../controllers/userController');
 const referralController = require('../controllers/referralController');
 const notificationController = require('../controllers/notificationController');
+const submissionController = require('../controllers/submissionController');
 
 // ── Static / specific routes FIRST (before :param routes) ─────────────────────
 router.get('/app/settings', userController.getAppSettings);
@@ -22,6 +23,10 @@ router.post('/:userId/scratch-offer', userController.scratchOffer);
 router.post('/:userId/request-deactivation', userController.requestAccountDelete);
 
 router.get('/:userId/offers', userController.getUserOffers);
+
+// Task submission (screenshot upload + status)
+router.post('/:userId/offers/:offerId/submissions', submissionController.createSubmission);
+router.get('/:userId/offers/:offerId/submission', submissionController.getSubmissionStatus);
 router.put('/:userId/payout', userController.updatePayoutDetails);
 
 // ── Dynamic :id routes LAST ───────────────────────────────────────────────────

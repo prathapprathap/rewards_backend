@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/adminController');
 const notificationController = require('../controllers/notificationController');
+const submissionController = require('../controllers/submissionController');
 
 router.post('/login', adminController.login);
 router.get('/users', adminController.getAllUsers);
@@ -44,6 +45,11 @@ router.post('/banners/upload', adminController.uploadBannerImage);
 router.post('/banners', adminController.createBanner);
 router.put('/banners/:id', adminController.updateBanner);
 router.delete('/banners/:id', adminController.deleteBanner);
+
+// Task Submissions (screenshot review)
+router.get('/submissions', submissionController.listSubmissions);
+router.put('/submissions/:id', submissionController.reviewSubmission);
+router.delete('/submissions/:id', submissionController.deleteSubmission);
 
 // Account Deactivation Requests
 router.get('/delete-requests', adminController.getAccountDeleteRequests);

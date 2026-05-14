@@ -72,7 +72,8 @@ async function getOfferById(req, res) {
         const [offers] = await db.query(
             `SELECT id, offer_id, offer_name, side_label, side_label_color, heading, history_name,
                     offer_url, tracking_link, amount, currency_type,
-                    event_name, description, image_url, refer_payout, status
+                    event_name, description, image_url, refer_payout, status,
+                    requires_screenshot
              FROM offers WHERE id = ? LIMIT 1`,
             [offerId]
         );
@@ -94,6 +95,7 @@ async function getOfferById(req, res) {
             offer: {
                 ...offer,
                 amount: parseFloat(offer.amount) || 0,
+                requires_screenshot: !!offer.requires_screenshot,
                 events: events.map(e => ({
                     event_id: e.event_id,
                     event_name: e.event_name,
@@ -188,6 +190,7 @@ async function createOfferWithEvents(req, res) {
             currency_type = 'cash', event_name = '',
             description = '', image_url = '',
             refer_payout = '1st Event', status = 'Active',
+            requires_screenshot = 0,
             events = []  // array of { event_id, event_name, description, points, currency_type }
         } = req.body;
 
@@ -201,11 +204,12 @@ async function createOfferWithEvents(req, res) {
             `INSERT INTO offers
              (offer_name, offer_id, side_label, side_label_color, heading, history_name, offer_url,
               tracking_link, amount, currency_type, event_name,
-              description, image_url, refer_payout, status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              description, image_url, refer_payout, status, requires_screenshot)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [offer_name, offer_id, side_label, side_label_color, heading, history_name, offer_url,
                 tracking_link, amount, currency_type, event_name,
-                description, image_url, refer_payout, status]
+                description, image_url, refer_payout, status,
+                requires_screenshot ? 1 : 0]
         );
 
         const newOfferId = offerResult.insertId;
@@ -261,6 +265,7 @@ async function updateOfferWithEvents(req, res) {
             offer_url, tracking_link, amount,
             currency_type, event_name, description,
             image_url, refer_payout, status,
+            requires_screenshot = 0,
             events = []
         } = req.body;
 
@@ -269,12 +274,13 @@ async function updateOfferWithEvents(req, res) {
              offer_name = ?, offer_id = ?, side_label = ?, side_label_color = ?, heading = ?, history_name = ?,
              offer_url = ?, tracking_link = ?, amount = ?,
              currency_type = ?, event_name = ?, description = ?,
-             image_url = ?, refer_payout = ?, status = ?
+             image_url = ?, refer_payout = ?, status = ?, requires_screenshot = ?
              WHERE id = ?`,
             [offer_name, offer_id, side_label, side_label_color, heading, history_name,
                 offer_url, tracking_link, amount,
                 currency_type, event_name, description,
-                image_url, refer_payout, status, id]
+                image_url, refer_payout, status,
+                requires_screenshot ? 1 : 0, id]
         );
 
         // Replace events if an array was provided
