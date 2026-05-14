@@ -5,14 +5,18 @@ const fs = require('fs');
 const path = require('path');
 
 async function runMigration() {
+    const arg = process.argv[2] || 'migrations/add_scratched_offers.sql';
+    const file = path.isAbsolute(arg) ? arg : path.join(__dirname, arg);
     try {
-        const sql = fs.readFileSync(
-            path.join(__dirname, 'migrations', 'add_scratched_offers.sql'),
-            'utf8'
-        );
-
-        await db.query(sql);
-        console.log('✅ Migration completed: scratched_offers table created');
+        const sql = fs.readFileSync(file, 'utf8');
+        const statements = sql
+            .split(/;\s*(?:\r?\n|$)/)
+            .map(s => s.trim())
+            .filter(s => s && !/^--/.test(s));
+        for (const stmt of statements) {
+            await db.query(stmt);
+        }
+        console.log(`✅ Migration completed: ${arg}`);
         process.exit(0);
     } catch (error) {
         console.error('❌ Migration failed:', error);
