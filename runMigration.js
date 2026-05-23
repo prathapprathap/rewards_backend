@@ -11,8 +11,8 @@ async function runMigration() {
         const sql = fs.readFileSync(file, 'utf8');
         const statements = sql
             .split(/;\s*(?:\r?\n|$)/)
-            .map(s => s.trim())
-            .filter(s => s && !/^--/.test(s));
+            .map(s => s.replace(/^\s*--[^\n]*\n/gm, '').trim())
+            .filter(s => s.length > 0);
         for (const stmt of statements) {
             await db.query(stmt);
         }

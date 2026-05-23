@@ -72,10 +72,23 @@ exports.createSubmission = async (req, res) => {
     try {
         const userId = parseInt(req.params.userId, 10);
         const offerId = parseInt(req.params.offerId, 10);
-        const { image_file } = req.body || {};
+        const { image_file, contact_info } = req.body || {};
 
         if (!userId || !offerId) {
             return res.status(400).json({ message: 'userId and offerId are required' });
+        }
+
+        const contact = typeof contact_info === 'string' ? contact_info.trim() : '';
+        if (!contact) {
+            return res.status(400).json({ message: 'WhatsApp number or email is required' });
+        }
+        const isPhone = /^\+?\d[\d\s-]{7,18}$/.test(contact);
+        const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact);
+        if (!isPhone && !isEmail) {
+            return res.status(400).json({ message: 'Enter a valid WhatsApp number or email' });
+        }
+        if (contact.length > 120) {
+            return res.status(400).json({ message: 'Contact info is too long' });
         }
 
         // Verify offer requires a screenshot
@@ -112,9 +125,9 @@ exports.createSubmission = async (req, res) => {
         }
 
         const [result] = await db.query(
-            `INSERT INTO task_submissions (user_id, offer_id, screenshot_url, status)
-             VALUES (?, ?, ?, 'pending')`,
-            [userId, offerId, screenshotUrl]
+            `INSERT INTO task_submissions (user_id, offer_id, screenshot_url, contact_info, status)
+             VALUES (?, ?, ?, ?, 'pending')`,
+            [userId, offerId, screenshotUrl, contact]
         );
 
         res.status(201).json({
@@ -124,6 +137,7 @@ exports.createSubmission = async (req, res) => {
                 user_id: userId,
                 offer_id: offerId,
                 screenshot_url: screenshotUrl,
+                contact_info: contact,
                 status: 'pending',
             },
         });
@@ -141,7 +155,7 @@ exports.getSubmissionStatus = async (req, res) => {
         const offerId = parseInt(req.params.offerId, 10);
 
         const [rows] = await db.query(
-            `SELECT id, status, screenshot_url, admin_note, created_at, reviewed_at
+            `SELECT id, status, screenshot_url, contact_info, admin_note, created_at, reviewed_at
              FROM task_submissions
              WHERE user_id = ? AND offer_id = ?
              ORDER BY id DESC LIMIT 1`,
@@ -167,7 +181,7 @@ exports.listSubmissions = async (req, res) => {
             params.push(status);
         }
         const [rows] = await db.query(
-            `SELECT ts.id, ts.user_id, ts.offer_id, ts.screenshot_url, ts.status,
+            `SELECT ts.id, ts.user_id, ts.offer_id, ts.screenshot_url, ts.contact_info, ts.status,
                     ts.admin_note, ts.created_at, ts.reviewed_at,
                     u.name AS user_name, u.email AS user_email,
                     o.offer_name, o.amount, o.image_url AS offer_image
