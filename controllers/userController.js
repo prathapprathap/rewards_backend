@@ -408,11 +408,37 @@ exports.getUserOffers = async (req, res) => {
             }
         }
 
+        // Offers where the user has a pending or approved manual screenshot submission.
+        // Approved → fully completed (reward credited); pending → user can't resubmit, so hide too.
+        let submittedOfferIds = new Set();
+        let approvedSubmissionOfferIds = new Set();
+        try {
+            const [submissions] = await db.query(
+                `SELECT offer_id, status FROM task_submissions
+                 WHERE user_id = ? AND status IN ('pending','approved')`,
+                [userId]
+            );
+            for (const s of submissions) {
+                submittedOfferIds.add(s.offer_id);
+                if (s.status === 'approved') approvedSubmissionOfferIds.add(s.offer_id);
+            }
+        } catch (e) {
+            console.error('Error fetching task_submissions (table may not exist):', e.message);
+        }
+
         // Mark offers with scratch + completion status
         const offersWithStatus = offers.map(offer => {
             const totalSteps = totalStepsMap[offer.id] || 0;
             const completion = completionMap[offer.id] || { completed_steps: 0, earned_amount: 0, events: [] };
-            const isAllCompleted = totalSteps > 0 && completion.completed_steps >= totalSteps;
+            // Offers with configured steps: all steps approved.
+            // Offers with no configured steps (single-event Offer18 postback flow):
+            // any approved event counts as completion, matching offer18Controller
+            // which marks the click 'completed' when totalSteps == 0.
+            const eventsCompleted = totalSteps > 0
+                ? completion.completed_steps >= totalSteps
+                : completion.completed_steps > 0;
+            const submissionApproved = approvedSubmissionOfferIds.has(offer.id);
+            const isAllCompleted = eventsCompleted || submissionApproved;
             const hasAnyCompletion = completion.completed_steps > 0;
 
             return {
@@ -427,8 +453,10 @@ exports.getUserOffers = async (req, res) => {
             };
         });
 
-        // Hide fully completed offers so a user doesn't see them again
-        const visibleOffers = offersWithStatus.filter(o => !o.is_completed);
+        // Hide offers that are completed or have an active manual submission
+        const visibleOffers = offersWithStatus.filter(o =>
+            !o.is_completed && !submittedOfferIds.has(o.id)
+        );
 
         return res.status(200).json(visibleOffers);
     } catch (error) {
