@@ -1,5 +1,26 @@
 const db = require('../config/db');
 
+function parseDemoScreenshots(raw) {
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw.filter(s => typeof s === 'string' && s.trim());
+    if (typeof raw === 'string') {
+        const trimmed = raw.trim();
+        if (!trimmed) return [];
+        try {
+            const parsed = JSON.parse(trimmed);
+            if (Array.isArray(parsed)) return parsed.filter(s => typeof s === 'string' && s.trim());
+        } catch (_) {}
+        // Fallback: comma-separated string
+        return trimmed.split(',').map(s => s.trim()).filter(Boolean);
+    }
+    return [];
+}
+
+function serializeDemoScreenshots(raw) {
+    const list = parseDemoScreenshots(raw);
+    return list.length > 0 ? JSON.stringify(list) : null;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /offers/offerwall
 // Returns all active offers with their associated events. Each offer includes a
@@ -73,7 +94,7 @@ async function getOfferById(req, res) {
             `SELECT id, offer_id, offer_name, side_label, side_label_color, heading, history_name,
                     offer_url, tracking_link, amount, currency_type,
                     event_name, description, image_url, refer_payout, status,
-                    requires_screenshot
+                    requires_screenshot, required_screenshot_count, demo_screenshots
              FROM offers WHERE id = ? LIMIT 1`,
             [offerId]
         );
@@ -96,6 +117,8 @@ async function getOfferById(req, res) {
                 ...offer,
                 amount: parseFloat(offer.amount) || 0,
                 requires_screenshot: !!offer.requires_screenshot,
+                required_screenshot_count: Math.max(1, parseInt(offer.required_screenshot_count, 10) || 1),
+                demo_screenshots: parseDemoScreenshots(offer.demo_screenshots),
                 events: events.map(e => ({
                     event_id: e.event_id,
                     event_name: e.event_name,
@@ -191,6 +214,8 @@ async function createOfferWithEvents(req, res) {
             description = '', image_url = '',
             refer_payout = '1st Event', status = 'Active',
             requires_screenshot = 0,
+            required_screenshot_count = 1,
+            demo_screenshots = null,
             events = []  // array of { event_id, event_name, description, points, currency_type }
         } = req.body;
 
@@ -204,12 +229,15 @@ async function createOfferWithEvents(req, res) {
             `INSERT INTO offers
              (offer_name, offer_id, side_label, side_label_color, heading, history_name, offer_url,
               tracking_link, amount, currency_type, event_name,
-              description, image_url, refer_payout, status, requires_screenshot)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              description, image_url, refer_payout, status,
+              requires_screenshot, required_screenshot_count, demo_screenshots)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [offer_name, offer_id, side_label, side_label_color, heading, history_name, offer_url,
                 tracking_link, amount, currency_type, event_name,
                 description, image_url, refer_payout, status,
-                requires_screenshot ? 1 : 0]
+                requires_screenshot ? 1 : 0,
+                Math.max(1, parseInt(required_screenshot_count, 10) || 1),
+                serializeDemoScreenshots(demo_screenshots)]
         );
 
         const newOfferId = offerResult.insertId;
@@ -266,6 +294,8 @@ async function updateOfferWithEvents(req, res) {
             currency_type, event_name, description,
             image_url, refer_payout, status,
             requires_screenshot = 0,
+            required_screenshot_count = 1,
+            demo_screenshots = null,
             events = []
         } = req.body;
 
@@ -274,13 +304,17 @@ async function updateOfferWithEvents(req, res) {
              offer_name = ?, offer_id = ?, side_label = ?, side_label_color = ?, heading = ?, history_name = ?,
              offer_url = ?, tracking_link = ?, amount = ?,
              currency_type = ?, event_name = ?, description = ?,
-             image_url = ?, refer_payout = ?, status = ?, requires_screenshot = ?
+             image_url = ?, refer_payout = ?, status = ?,
+             requires_screenshot = ?, required_screenshot_count = ?, demo_screenshots = ?
              WHERE id = ?`,
             [offer_name, offer_id, side_label, side_label_color, heading, history_name,
                 offer_url, tracking_link, amount,
                 currency_type, event_name, description,
                 image_url, refer_payout, status,
-                requires_screenshot ? 1 : 0, id]
+                requires_screenshot ? 1 : 0,
+                Math.max(1, parseInt(required_screenshot_count, 10) || 1),
+                serializeDemoScreenshots(demo_screenshots),
+                id]
         );
 
         // Replace events if an array was provided

@@ -1,6 +1,7 @@
 const db = require('../config/db');
 const crypto = require('crypto');
 const { processReferralCommission } = require('./referralController');
+const { sendOfferApprovedNotification } = require('../services/telegramService');
 
 // Generate unique click ID
 function generateClickId() {
@@ -322,6 +323,30 @@ async function handlePostback(req, res) {
                 'UPDATE offer_clicks SET status = ?, completed_at = CURRENT_TIMESTAMP WHERE click_id = ?',
                 [allDone ? 'completed' : 'pending', clickid]
             );
+
+            // Telegram admin notification (ports PHP CallBack-Data-PostBack.php behavior)
+            try {
+                const [offerRows] = await db.query(
+                    'SELECT offer_name FROM offers WHERE id = ?',
+                    [click.offer_id]
+                );
+                const [userRows] = await db.query(
+                    'SELECT email, device_id FROM users WHERE id = ?',
+                    [click.user_id]
+                );
+                const offerTitle = offerRows[0]?.offer_name || `Offer #${click.offer_id}`;
+                const phoneNumber = userRows[0]?.email || '';
+                const deviceId = userRows[0]?.device_id || '';
+
+                sendOfferApprovedNotification({
+                    offerName: `${offerTitle} (${normalizedEventName})`,
+                    coin: `${stepPayout} ${stepCurrency}`,
+                    phoneNumber,
+                    deviceId,
+                }).catch(e => console.error('Telegram notify failed:', e.message));
+            } catch (e) {
+                console.error('Telegram notify prep failed:', e.message);
+            }
         }
 
         console.log('✅ Postback processed successfully for user:', click.user_id,

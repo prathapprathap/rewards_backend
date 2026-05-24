@@ -321,9 +321,9 @@ const initDB = async () => {
       ['new_user_spin_bonus', '2', 'Number of free spins for new users'],
       ['signup_bonus_cash', '5', 'Initial bonus cash (₹) for signing up'],
       ['signup_bonus_coins', '500', 'Initial bonus coins for signing up'],
-      ['referral_fixed_reward', '10', 'Fixed reward credited to referrer after friend completes 1st offer'],
+      ['referral_fixed_reward', '0', 'Fixed reward credited to referrer after friend completes 1st offer'],
       ['referral_commission_percent', '10', 'Commission percentage earned from referred user tasks'],
-      ['referral_reward_type', 'both', 'Referral reward model (fixed, percent, or both)'],
+      ['referral_reward_type', 'percent', 'Referral reward model (fixed, percent, or both)'],
       ['referral_reward_target', 'referrer', 'Who receives referral bonuses: referrer, referred_user, or both'],
       ['referral_referred_user_bonus', '0', 'One-time bonus credited to the referred user after meeting referral conditions'],
       ['referral_min_offer_count', '1', 'Minimum approved offers the referred user must complete before referral rewards unlock'],
@@ -364,6 +364,27 @@ const initDB = async () => {
         'INSERT IGNORE INTO app_settings (setting_key, setting_value, description) VALUES (?, ?, ?)',
         [key, value, description]
       );
+    }
+
+    // One-time migration: force referral payout to percent-only.
+    // Old installs had reward_type='both' + fixed_reward='10', which caused
+    // the referrer to receive an extra fixed bonus on the first qualifying
+    // offer on top of the percentage commission.
+    const [migrationRow] = await promisePool.query(
+      "SELECT setting_value FROM app_settings WHERE setting_key = 'referral_percent_only_migration'"
+    );
+    if (migrationRow.length === 0) {
+      await promisePool.query(
+        "UPDATE app_settings SET setting_value = 'percent' WHERE setting_key = 'referral_reward_type'"
+      );
+      await promisePool.query(
+        "UPDATE app_settings SET setting_value = '0' WHERE setting_key = 'referral_fixed_reward'"
+      );
+      await promisePool.query(
+        "INSERT INTO app_settings (setting_key, setting_value, description) VALUES (?, ?, ?)",
+        ['referral_percent_only_migration', 'applied', 'Marker: referral payout migrated to percent-only']
+      );
+      console.log('Applied referral percent-only migration.');
     }
 
     await promisePool.query(`

@@ -427,7 +427,10 @@ exports.getUserOffers = async (req, res) => {
             };
         });
 
-        return res.status(200).json(offersWithStatus);
+        // Hide fully completed offers so a user doesn't see them again
+        const visibleOffers = offersWithStatus.filter(o => !o.is_completed);
+
+        return res.status(200).json(visibleOffers);
     } catch (error) {
         console.error('Error in getUserOffers:', error);
         return res.status(500).json({ message: 'Server error' });

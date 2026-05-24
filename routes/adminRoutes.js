@@ -20,6 +20,23 @@ router.get('/stats', adminController.getDashboardStats);
 router.get('/settings', adminController.getAppSettings);
 router.put('/settings', adminController.updateAppSettings);
 
+// Telegram notification test
+const { sendOfferApprovedNotification } = require('../services/telegramService');
+router.post('/telegram/test', async (req, res) => {
+    try {
+        const ok = await sendOfferApprovedNotification({
+            offerName: 'Test Notification',
+            coin: '0',
+            phoneNumber: 'admin@test',
+            deviceId: 'admin-panel-test',
+        });
+        if (ok) return res.json({ success: true, message: 'Test message sent to Telegram.' });
+        return res.status(400).json({ success: false, message: 'Send failed. Verify bot token & chat id.' });
+    } catch (e) {
+        return res.status(500).json({ success: false, message: e.message });
+    }
+});
+
 router.get('/promocodes', adminController.getAllPromoCodes);
 router.post('/promocodes', adminController.createPromoCode);
 router.put('/promocodes/:id', adminController.updatePromoCode);

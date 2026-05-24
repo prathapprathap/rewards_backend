@@ -65,6 +65,17 @@ async function removeSubmissionImage(imageUrl) {
     try { await fs.unlink(filePath); } catch (_) {}
 }
 
+function parseScreenshotUrls(row) {
+    if (!row) return [];
+    if (row.screenshot_urls) {
+        try {
+            const parsed = JSON.parse(row.screenshot_urls);
+            if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        } catch (_) {}
+    }
+    return row.screenshot_url ? [row.screenshot_url] : [];
+}
+
 // ── USER: create a submission for an offer ───────────────────────────────────
 // POST /api/users/:userId/offers/:offerId/submissions
 // Body: { image_file: dataUrl|{dataUrl|base64} }
@@ -72,7 +83,7 @@ exports.createSubmission = async (req, res) => {
     try {
         const userId = parseInt(req.params.userId, 10);
         const offerId = parseInt(req.params.offerId, 10);
-        const { image_file, contact_info } = req.body || {};
+        const { image_file, image_files, contact_info } = req.body || {};
 
         if (!userId || !offerId) {
             return res.status(400).json({ message: 'userId and offerId are required' });
@@ -93,7 +104,7 @@ exports.createSubmission = async (req, res) => {
 
         // Verify offer requires a screenshot
         const [offers] = await db.query(
-            'SELECT id, requires_screenshot FROM offers WHERE id = ? LIMIT 1',
+            'SELECT id, requires_screenshot, required_screenshot_count FROM offers WHERE id = ? LIMIT 1',
             [offerId]
         );
         if (offers.length === 0) {
@@ -102,6 +113,7 @@ exports.createSubmission = async (req, res) => {
         if (!offers[0].requires_screenshot) {
             return res.status(400).json({ message: 'This offer does not require a screenshot' });
         }
+        const requiredCount = Math.max(1, parseInt(offers[0].required_screenshot_count, 10) || 1);
 
         // Block duplicate active submission (pending or approved)
         const [active] = await db.query(
@@ -119,15 +131,37 @@ exports.createSubmission = async (req, res) => {
             });
         }
 
-        const screenshotUrl = await persistSubmissionImage(image_file, req, `u${userId}o${offerId}`);
-        if (!screenshotUrl) {
-            return res.status(400).json({ message: 'Invalid image payload' });
+        // Collect image payloads — prefer image_files (array), fall back to image_file (single)
+        let payloads = [];
+        if (Array.isArray(image_files) && image_files.length > 0) {
+            payloads = image_files;
+        } else if (image_file) {
+            payloads = [image_file];
+        }
+
+        if (payloads.length < requiredCount) {
+            return res.status(400).json({
+                message: `Please upload ${requiredCount} screenshot${requiredCount > 1 ? 's' : ''}`,
+            });
+        }
+        // Cap at requiredCount to keep storage bounded
+        payloads = payloads.slice(0, requiredCount);
+
+        const urls = [];
+        for (let i = 0; i < payloads.length; i++) {
+            const url = await persistSubmissionImage(payloads[i], req, `u${userId}o${offerId}_${i}`);
+            if (!url) {
+                // rollback already-saved files
+                for (const u of urls) await removeSubmissionImage(u);
+                return res.status(400).json({ message: 'Invalid image payload' });
+            }
+            urls.push(url);
         }
 
         const [result] = await db.query(
-            `INSERT INTO task_submissions (user_id, offer_id, screenshot_url, contact_info, status)
-             VALUES (?, ?, ?, ?, 'pending')`,
-            [userId, offerId, screenshotUrl, contact]
+            `INSERT INTO task_submissions (user_id, offer_id, screenshot_url, screenshot_urls, contact_info, status)
+             VALUES (?, ?, ?, ?, ?, 'pending')`,
+            [userId, offerId, urls[0], JSON.stringify(urls), contact]
         );
 
         res.status(201).json({
@@ -136,7 +170,8 @@ exports.createSubmission = async (req, res) => {
                 id: result.insertId,
                 user_id: userId,
                 offer_id: offerId,
-                screenshot_url: screenshotUrl,
+                screenshot_url: urls[0],
+                screenshot_urls: urls,
                 contact_info: contact,
                 status: 'pending',
             },
@@ -155,14 +190,28 @@ exports.getSubmissionStatus = async (req, res) => {
         const offerId = parseInt(req.params.offerId, 10);
 
         const [rows] = await db.query(
-            `SELECT id, status, screenshot_url, contact_info, admin_note, created_at, reviewed_at
+            `SELECT id, status, screenshot_url, screenshot_urls, contact_info, admin_note, created_at, reviewed_at
              FROM task_submissions
              WHERE user_id = ? AND offer_id = ?
              ORDER BY id DESC LIMIT 1`,
             [userId, offerId]
         );
 
-        res.json({ submission: rows[0] || null });
+        const row = rows[0];
+        if (!row) return res.json({ submission: null });
+        const urls = parseScreenshotUrls(row);
+        res.json({
+            submission: {
+                id: row.id,
+                status: row.status,
+                screenshot_url: row.screenshot_url,
+                screenshot_urls: urls,
+                contact_info: row.contact_info,
+                admin_note: row.admin_note,
+                created_at: row.created_at,
+                reviewed_at: row.reviewed_at,
+            },
+        });
     } catch (error) {
         console.error('Error fetching submission:', error);
         res.status(500).json({ message: 'Server error' });
@@ -181,7 +230,8 @@ exports.listSubmissions = async (req, res) => {
             params.push(status);
         }
         const [rows] = await db.query(
-            `SELECT ts.id, ts.user_id, ts.offer_id, ts.screenshot_url, ts.contact_info, ts.status,
+            `SELECT ts.id, ts.user_id, ts.offer_id, ts.screenshot_url, ts.screenshot_urls,
+                    ts.contact_info, ts.status,
                     ts.admin_note, ts.created_at, ts.reviewed_at,
                     u.name AS user_name, u.email AS user_email,
                     o.offer_name, o.amount, o.image_url AS offer_image
@@ -192,7 +242,7 @@ exports.listSubmissions = async (req, res) => {
              ORDER BY ts.created_at DESC`,
             params
         );
-        res.json(rows);
+        res.json(rows.map(r => ({ ...r, screenshot_urls: parseScreenshotUrls(r) })));
     } catch (error) {
         console.error('Error listing submissions:', error);
         res.status(500).json({ message: 'Server error' });
@@ -284,11 +334,12 @@ exports.reviewSubmission = async (req, res) => {
 exports.deleteSubmission = async (req, res) => {
     try {
         const { id } = req.params;
-        const [rows] = await db.query('SELECT screenshot_url FROM task_submissions WHERE id = ?', [id]);
+        const [rows] = await db.query('SELECT screenshot_url, screenshot_urls FROM task_submissions WHERE id = ?', [id]);
         if (rows.length === 0) {
             return res.status(404).json({ message: 'Submission not found' });
         }
-        await removeSubmissionImage(rows[0].screenshot_url);
+        const urls = parseScreenshotUrls(rows[0]);
+        for (const u of urls) await removeSubmissionImage(u);
         await db.query('DELETE FROM task_submissions WHERE id = ?', [id]);
         res.json({ message: 'Submission deleted' });
     } catch (error) {
