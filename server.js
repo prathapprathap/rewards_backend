@@ -94,8 +94,77 @@ async function handleDownload(req, res) {
             }
         }
 
-        // Redirect to APK download
-        return res.redirect(302, downloadUrl);
+        // If there's no referral code, redirect directly to the APK
+        if (!referralCode) {
+            return res.redirect(302, downloadUrl);
+        }
+
+        // With a referral code, serve an interstitial page that copies the
+        // code to the clipboard before starting the APK download. The Flutter
+        // app's login screen scans the clipboard on first launch and applies
+        // the code automatically.
+        const safeCode = String(referralCode).replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        const safeUrl = downloadUrl.replace(/"/g, '&quot;');
+        const clipboardPayload = `referral code: ${safeCode}`;
+
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        return res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Download App</title>
+<style>
+  body{margin:0;font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#f6f8f6;color:#1b1b1b;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}
+  .card{background:#fff;border-radius:20px;padding:28px;max-width:380px;width:100%;box-shadow:0 6px 24px rgba(0,0,0,.08);text-align:center}
+  h1{font-size:20px;margin:0 0 8px;color:#0f9d58}
+  p{font-size:14px;line-height:1.5;color:#555;margin:8px 0}
+  .code{font-size:22px;font-weight:800;letter-spacing:2px;color:#0f9d58;background:#eafaf0;padding:12px 16px;border-radius:12px;display:inline-block;margin:12px 0}
+  .btn{display:block;background:#0f9d58;color:#fff;text-decoration:none;padding:16px 20px;border-radius:30px;font-weight:700;font-size:16px;margin-top:18px;border:0;cursor:pointer;width:100%}
+  .note{font-size:12px;color:#888;margin-top:14px}
+  .ok{color:#0f9d58;font-weight:600;display:none;margin-top:10px}
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>You've been invited!</h1>
+    <p>Your referral code is</p>
+    <div class="code">${safeCode}</div>
+    <p>Tap the button below — we'll copy your referral code and start the app download. It will be applied automatically when you sign in.</p>
+    <button id="dl" class="btn">Copy Code &amp; Download</button>
+    <div id="ok" class="ok">Code copied! Starting download…</div>
+    <p class="note">If the download doesn't start, <a href="${safeUrl}">tap here</a>.</p>
+  </div>
+<script>
+(function(){
+  var payload = ${JSON.stringify(clipboardPayload)};
+  var apk = ${JSON.stringify(downloadUrl)};
+  function copy(text){
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        return navigator.clipboard.writeText(text);
+      }
+    } catch(e){}
+    return new Promise(function(resolve){
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      try { document.execCommand('copy'); } catch(e){}
+      document.body.removeChild(ta); resolve();
+    });
+  }
+  document.getElementById('dl').addEventListener('click', function(){
+    copy(payload).finally(function(){
+      document.getElementById('ok').style.display = 'block';
+      setTimeout(function(){ window.location.href = apk; }, 400);
+    });
+  });
+  // Best-effort silent copy on page load (may be blocked without gesture)
+  copy(payload).catch(function(){});
+})();
+</script>
+</body>
+</html>`);
     } catch (error) {
         console.error('Error in download endpoint:', error);
         return res.status(500).json({ message: 'Server error' });
