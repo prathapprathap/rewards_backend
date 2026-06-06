@@ -314,6 +314,12 @@ exports.getDashboardStats = async (req, res) => {
         const [[pendingPayouts]] = await db.query(QUERIES.ADMIN.COUNT_PENDING_WITHDRAWALS);
         const [[todayWithdrawals]] = await db.query(QUERIES.ADMIN.COUNT_TODAY_WITHDRAWALS);
         const [[todayPayouts]] = await db.query(QUERIES.ADMIN.SUM_TODAY_PAYOUTS);
+        const [[checkinsTotal]] = await db.query(QUERIES.ADMIN.COUNT_CHECKINS_TOTAL);
+        const [[checkinsToday]] = await db.query(QUERIES.ADMIN.COUNT_CHECKINS_TODAY);
+        const [[offersCompletedTotal]] = await db.query(QUERIES.ADMIN.COUNT_OFFERS_COMPLETED_TOTAL);
+        const [[offersCompletedToday]] = await db.query(QUERIES.ADMIN.COUNT_OFFERS_COMPLETED_TODAY);
+        const [[withdrawalRequestsTotal]] = await db.query(QUERIES.ADMIN.COUNT_WITHDRAWAL_REQUESTS_TOTAL);
+        const [[withdrawalRequestsToday]] = await db.query(QUERIES.ADMIN.COUNT_WITHDRAWAL_REQUESTS_TODAY);
 
         res.status(200).json({
             totalUsers: userCount.count,
@@ -324,6 +330,12 @@ exports.getDashboardStats = async (req, res) => {
             pendingPayouts: pendingPayouts.count,
             todayWithdrawals: todayWithdrawals.count,
             todayPayouts: todayPayouts.sum || 0,
+            checkinsTotal: checkinsTotal.count,
+            checkinsToday: checkinsToday.count,
+            offersCompletedTotal: offersCompletedTotal.count,
+            offersCompletedToday: offersCompletedToday.count,
+            withdrawalRequestsTotal: withdrawalRequestsTotal.count,
+            withdrawalRequestsToday: withdrawalRequestsToday.count,
         });
     } catch (error) {
         console.error('Error fetching stats:', error);
@@ -395,6 +407,69 @@ exports.getProfile = async (req, res) => {
     }
 };
 
+// Update admin profile (username, name, email)
+exports.updateProfile = async (req, res) => {
+    const { username, name, email, currentUsername } = req.body;
+
+    try {
+        if (!username || !username.trim()) {
+            return res.status(400).json({ message: 'Username is required' });
+        }
+
+        if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            return res.status(400).json({ message: 'Please provide a valid email address' });
+        }
+
+        // Locate the admin row to edit: prefer the logged-in username, else the
+        // lowest-id row for legacy clients that don't send it.
+        let rows;
+        if (currentUsername) {
+            [rows] = await db.query('SELECT id FROM admin_info WHERE username = ? LIMIT 1', [currentUsername]);
+        }
+        if (!rows || rows.length === 0) {
+            [rows] = await db.query('SELECT id FROM admin_info ORDER BY id ASC LIMIT 1');
+        }
+        if (rows.length === 0) return res.status(404).json({ message: 'Admin not found' });
+
+        const adminId = rows[0].id;
+
+        // Guard against username collisions with a different admin row.
+        const [dupes] = await db.query(
+            'SELECT id FROM admin_info WHERE username = ? AND id <> ? LIMIT 1',
+            [username.trim(), adminId]
+        );
+        if (dupes.length > 0) {
+            return res.status(409).json({ message: 'That username is already taken' });
+        }
+
+        await db.query(
+            'UPDATE admin_info SET username = ?, name = ?, email = ? WHERE id = ?',
+            [username.trim(), name?.trim() || null, email?.trim() || null, adminId]
+        );
+
+        const [updated] = await db.query(
+            'SELECT id, username, name, email, created_at FROM admin_info WHERE id = ?',
+            [adminId]
+        );
+        const admin = updated[0];
+
+        console.log(`[updateProfile] Profile updated for admin id=${adminId} username=${admin.username}`);
+        res.status(200).json({
+            message: 'Profile updated successfully',
+            admin: {
+                id: admin.id,
+                username: admin.username,
+                name: admin.name || admin.username,
+                email: admin.email || 'admin@rewardmobi.xyz',
+                created_at: admin.created_at,
+            },
+        });
+    } catch (error) {
+        console.error('Error updating admin profile:', error);
+        res.status(500).json({ message: 'Server error: ' + error.message });
+    }
+};
+
 // Get all withdrawals
 exports.getWithdrawals = async (req, res) => {
     try {
@@ -412,7 +487,7 @@ exports.updateWithdrawalStatus = async (req, res) => {
     const { status } = req.body; // APPROVED or REJECTED
 
     try {
-        await db.query(QUERIES.ADMIN.UPDATE_WITHDRAWAL_STATUS, [status, id]);
+        await db.query(QUERIES.ADMIN.UPDATE_WITHDRAWAL_STATUS, [status, status, id]);
 
         // Update the status in wallet_transactions table too
         const wtStatus = status === 'APPROVED' || status === 'PAID' ? 'success' : (status === 'REJECTED' ? 'rejected' : 'pending');

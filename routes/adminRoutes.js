@@ -50,6 +50,7 @@ router.get('/users/:id/transactions', adminController.getUserTransactions);
 router.get('/users/:id/withdrawals', adminController.getUserWithdrawals);
 router.get('/top-referrers', adminController.getTopReferrers);
 router.put('/profile/password', adminController.updatePassword);
+router.put('/profile', adminController.updateProfile);
 router.get('/profile', adminController.getProfile);
 
 // Dashboard & Stats

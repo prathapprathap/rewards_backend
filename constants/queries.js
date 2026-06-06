@@ -50,6 +50,12 @@ module.exports = {
         COUNT_PENDING_WITHDRAWALS: "SELECT COUNT(*) as count FROM withdrawals WHERE status = 'PENDING'",
         COUNT_TODAY_WITHDRAWALS: 'SELECT COUNT(*) as count FROM withdrawals WHERE created_at >= CURDATE()',
         SUM_TODAY_PAYOUTS: "SELECT SUM(amount) as sum FROM withdrawals WHERE status = 'APPROVED' AND created_at >= CURDATE()",
+        COUNT_CHECKINS_TOTAL: 'SELECT COUNT(*) as count FROM checkins',
+        COUNT_CHECKINS_TODAY: 'SELECT COUNT(*) as count FROM checkins WHERE checkin_date = CURDATE()',
+        COUNT_OFFERS_COMPLETED_TOTAL: "SELECT COUNT(*) as count FROM offer_events WHERE status = 'approved'",
+        COUNT_OFFERS_COMPLETED_TODAY: "SELECT COUNT(*) as count FROM offer_events WHERE status = 'approved' AND COALESCE(processed_at, created_at) >= CURDATE()",
+        COUNT_WITHDRAWAL_REQUESTS_TOTAL: 'SELECT COUNT(*) as count FROM withdrawals',
+        COUNT_WITHDRAWAL_REQUESTS_TODAY: 'SELECT COUNT(*) as count FROM withdrawals WHERE created_at >= CURDATE()',
         GET_RECENT_TRANSACTIONS: `
             SELECT wt.*, u.email 
             FROM wallet_transactions wt 
@@ -66,7 +72,10 @@ module.exports = {
       JOIN users u ON w.user_id = u.id 
       ORDER BY w.created_at DESC
     `,
-        UPDATE_WITHDRAWAL_STATUS: 'UPDATE withdrawals SET status = ? WHERE id = ?',
+        UPDATE_WITHDRAWAL_STATUS: `UPDATE withdrawals
+            SET status = ?,
+                paid_at = CASE WHEN ? IN ('APPROVED', 'PAID') THEN NOW() ELSE paid_at END
+            WHERE id = ?`,
         GET_WITHDRAWAL_BY_ID: 'SELECT user_id, amount FROM withdrawals WHERE id = ?',
         GET_ALL_SETTINGS: 'SELECT * FROM app_settings',
         UPSERT_SETTING: `
@@ -96,6 +105,6 @@ module.exports = {
             WHERE wt.user_id = ? 
             ORDER BY wt.created_at DESC`,
         CREATE_TRANSACTION: 'INSERT INTO wallet_transactions (user_id, transaction_type, currency_type, amount, balance_before, balance_after, description) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        CREATE_WITHDRAWAL: 'INSERT INTO withdrawals (user_id, amount, method, details) VALUES (?, ?, ?, ?)',
+        CREATE_WITHDRAWAL: 'INSERT INTO withdrawals (user_id, amount, method, details, mobile) VALUES (?, ?, ?, ?, ?)',
     }
 };

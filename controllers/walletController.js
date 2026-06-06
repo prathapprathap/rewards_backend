@@ -25,7 +25,7 @@ exports.getWalletInfo = async (req, res) => {
 
 // Request Withdrawal (Enhanced with Reference Project requirements)
 exports.requestWithdrawal = async (req, res) => {
-    const { userId, amount, method, details } = req.body;
+    const { userId, amount, method, details, mobile } = req.body;
 
     try {
         // 1. Get App Settings
@@ -69,8 +69,20 @@ exports.requestWithdrawal = async (req, res) => {
         }
 
         // 5. Balance Check
-        const [user] = await db.query(QUERIES.USER.GET_WALLET_BALANCE, [userId]);
+        const [user] = await db.query('SELECT wallet_balance, mobile FROM users WHERE id = ?', [userId]);
         if (user.length === 0) return res.status(404).json({ message: 'User not found' });
+
+        // Resolve contact mobile number. We only ask the user for it on their
+        // first withdrawal, then reuse the saved value for later requests.
+        const savedMobile = (user[0].mobile || '').trim();
+        const providedMobile = (mobile || '').trim();
+        const effectiveMobile = savedMobile || providedMobile;
+        if (!effectiveMobile) {
+            return res.status(400).json({ message: 'Please enter your mobile number' });
+        }
+        if (!/^\d{10}$/.test(effectiveMobile)) {
+            return res.status(400).json({ message: 'Please enter a valid 10-digit mobile number' });
+        }
 
         const currentBalance = parseFloat(user[0].wallet_balance);
         const withdrawAmount = parseFloat(amount);
@@ -90,8 +102,13 @@ exports.requestWithdrawal = async (req, res) => {
 
         // Create Withdrawal Request record first to get ID
         const [withdrawalResult] = await db.query(QUERIES.WALLET.CREATE_WITHDRAWAL,
-            [userId, withdrawAmount, method, details]);
+            [userId, withdrawAmount, method, details, effectiveMobile]);
         const withdrawalId = withdrawalResult.insertId;
+
+        // Persist the mobile on the user profile the first time it's supplied.
+        if (!savedMobile && providedMobile) {
+            await db.query('UPDATE users SET mobile = ? WHERE id = ?', [effectiveMobile, userId]);
+        }
 
         // Deduct balance
         await db.query(QUERIES.USER.UPDATE_BALANCE_DEDUCT, [withdrawAmount, userId]);
