@@ -28,6 +28,12 @@ function serializeDemoScreenshots(raw) {
 // ─────────────────────────────────────────────────────────────────────────────
 async function getOfferwallOffers(req, res) {
     try {
+        // Optional: when a userId is supplied, the response hides offers the user
+        // has already completed (or has a pending/approved submission for) and
+        // marks per-event completion — mirroring GET /users/:userId/offers so the
+        // offerwall stays consistent with the home screen.
+        const userId = req.query.userId ? parseInt(req.query.userId, 10) : null;
+
         // Fetch all active offers
         const [offers] = await db.query(
             `SELECT id, offer_id, offer_name, side_label, side_label_color, heading, history_name,
@@ -54,26 +60,92 @@ async function getOfferwallOffers(req, res) {
             offerIds
         );
 
-        // Group events by offer_id
+        // ── Per-user completion data (only when userId is provided) ──────────
+        // completedEventNames: offerId -> Set of approved event_name
+        // approvedSubmissionOfferIds / submittedOfferIds: manual screenshot flow
+        const completedEventNames = {};
+        const submittedOfferIds = new Set();
+        const approvedSubmissionOfferIds = new Set();
+
+        if (userId && !Number.isNaN(userId)) {
+            try {
+                const [completedEvents] = await db.query(
+                    `SELECT offer_id, event_name
+                     FROM offer_events
+                     WHERE user_id = ?
+                       AND offer_id IN (${placeholders})
+                       AND status = 'approved'
+                     GROUP BY offer_id, event_name`,
+                    [userId, ...offerIds]
+                );
+                for (const ev of completedEvents) {
+                    if (!completedEventNames[ev.offer_id]) {
+                        completedEventNames[ev.offer_id] = new Set();
+                    }
+                    completedEventNames[ev.offer_id].add(
+                        (ev.event_name || '').trim().toLowerCase()
+                    );
+                }
+            } catch (e) {
+                console.error('Error fetching offerwall completion data (table may not exist):', e.message);
+            }
+
+            try {
+                const [submissions] = await db.query(
+                    `SELECT offer_id, status FROM task_submissions
+                     WHERE user_id = ? AND status IN ('pending','approved')`,
+                    [userId]
+                );
+                for (const s of submissions) {
+                    submittedOfferIds.add(s.offer_id);
+                    if (s.status === 'approved') approvedSubmissionOfferIds.add(s.offer_id);
+                }
+            } catch (e) {
+                console.error('Error fetching offerwall submissions (table may not exist):', e.message);
+            }
+        }
+
+        // Group events by offer_id, marking completion when we know the user.
         const eventMap = {};
         for (const event of events) {
             if (!eventMap[event.offer_id]) eventMap[event.offer_id] = [];
+            const doneSet = completedEventNames[event.offer_id];
+            const isCompleted = doneSet
+                ? doneSet.has((event.event_name || '').trim().toLowerCase())
+                : false;
             eventMap[event.offer_id].push({
                 event_id: event.event_id,
                 event_name: event.event_name,
                 description: event.description || '',
                 points: parseFloat(event.points) || 0,
                 currency_type: event.currency_type || 'cash',
-                is_completed: false,
+                is_completed: isCompleted,
             });
         }
 
         // Merge events into offers
-        const result = offers.map(offer => ({
+        let result = offers.map(offer => ({
             ...offer,
             amount: parseFloat(offer.amount) || 0,
             events: eventMap[offer.id] || [],
         }));
+
+        // When we know the user, drop offers that are fully completed or have an
+        // active (pending/approved) manual submission.
+        if (userId && !Number.isNaN(userId)) {
+            result = result.filter(offer => {
+                const offerEvents = offer.events;
+                const totalSteps = offerEvents.length;
+                const completedSteps = offerEvents.filter(e => e.is_completed).length;
+                // Steps configured → all must be done. No steps (single-event
+                // postback flow) → any approved event counts as completion.
+                const eventsCompleted = totalSteps > 0
+                    ? completedSteps >= totalSteps
+                    : (completedEventNames[offer.id]?.size || 0) > 0;
+                const isAllCompleted = eventsCompleted || approvedSubmissionOfferIds.has(offer.id);
+                return !isAllCompleted && !submittedOfferIds.has(offer.id);
+            });
+        }
 
         res.json(result);
     } catch (error) {

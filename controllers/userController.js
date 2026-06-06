@@ -114,10 +114,15 @@ exports.loginWithGoogle = async (req, res) => {
                 const [referrerRows] = await db.query(QUERIES.USER.GET_USER_BY_REFERRAL_CODE, [finalReferralCode]);
                 if (referrerRows.length > 0) {
                     referrerId = referrerRows[0].id;
-                    // Set referred_by on new user
-                    await db.query(QUERIES.USER.SET_REFERRED_BY, [finalReferralCode, userId]);
-                    // Create referral record (PENDING status)
-                    await db.query(QUERIES.USER.CREATE_REFERRAL, [referrerId, userId]);
+                    // Prevent users from referring themselves
+                    if (referrerId !== userId) {
+                        // Use the referrer's canonical code so referred_by is stored consistently
+                        finalReferralCode = referrerRows[0].referral_code;
+                        // Set referred_by on new user
+                        await db.query(QUERIES.USER.SET_REFERRED_BY, [finalReferralCode, userId]);
+                        // Create referral record (PENDING status)
+                        await db.query(QUERIES.USER.CREATE_REFERRAL, [referrerId, userId]);
+                    }
                 }
             }
 
