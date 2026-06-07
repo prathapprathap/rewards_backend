@@ -236,17 +236,34 @@ exports.getReferralStats = async (req, res) => {
     const { userId } = req.params;
     try {
         const [stats] = await db.query(
-            `SELECT 
+            `SELECT
                COUNT(*) as total_referrals,
                SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) as successful_referrals,
                COALESCE(SUM(commission_earned), 0) as total_commission
              FROM referrals WHERE referrer_id = ?`,
             [userId]
         );
+
+        // The referrals table's commission_earned only tracks percentage
+        // commission. Fixed-reward referral income is recorded on the user's
+        // referral_earnings column, so use that as the authoritative total and
+        // fall back to the per-referral sum when it is higher.
+        //
+        // referral_count_adjustment is a manual boost set from the admin panel
+        // and is added to the real referral count there, so include it here too
+        // to keep the app and admin panel consistent.
+        const [userRows] = await db.query(
+            'SELECT referral_earnings, referral_count_adjustment FROM users WHERE id = ?',
+            [userId]
+        );
+        const commissionSum = parseFloat(stats[0]?.total_commission || 0);
+        const referralEarnings = parseFloat(userRows[0]?.referral_earnings || 0);
+        const countAdjustment = parseInt(userRows[0]?.referral_count_adjustment || 0);
+
         return res.status(200).json({
-            total_referrals: parseInt(stats[0]?.total_referrals || 0),
+            total_referrals: parseInt(stats[0]?.total_referrals || 0) + countAdjustment,
             successful_referrals: parseInt(stats[0]?.successful_referrals || 0),
-            total_commission: parseFloat(stats[0]?.total_commission || 0)
+            total_commission: Math.max(commissionSum, referralEarnings)
         });
     } catch (error) {
         console.error('Error in getReferralStats:', error);
