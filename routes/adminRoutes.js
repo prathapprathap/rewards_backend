@@ -21,9 +21,17 @@ router.get('/settings', adminController.getAppSettings);
 router.put('/settings', adminController.updateAppSettings);
 
 // Telegram notification test
-const { sendOfferApprovedNotification } = require('../services/telegramService');
+const { sendOfferApprovedNotification, getTelegramConfig } = require('../services/telegramService');
 router.post('/telegram/test', async (req, res) => {
     try {
+        const { bot_token, chat_id } = await getTelegramConfig();
+        if (!bot_token) {
+            return res.status(400).json({ success: false, message: 'Telegram Bot Token is empty. Add it and Save before testing.' });
+        }
+        if (!chat_id) {
+            return res.status(400).json({ success: false, message: 'Telegram Chat ID is empty. Add it and Save before testing.' });
+        }
+
         const ok = await sendOfferApprovedNotification({
             offerName: 'Test Notification',
             coin: '0',
@@ -31,7 +39,7 @@ router.post('/telegram/test', async (req, res) => {
             deviceId: 'admin-panel-test',
         });
         if (ok) return res.json({ success: true, message: 'Test message sent to Telegram.' });
-        return res.status(400).json({ success: false, message: 'Send failed. Verify bot token & chat id.' });
+        return res.status(400).json({ success: false, message: 'Send failed. Telegram rejected the request — check the bot token & chat id are correct, and that you have messaged the bot at least once.' });
     } catch (e) {
         return res.status(500).json({ success: false, message: e.message });
     }
