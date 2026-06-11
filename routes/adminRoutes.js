@@ -3,8 +3,14 @@ const router = express.Router();
 const adminController = require('../controllers/adminController');
 const notificationController = require('../controllers/notificationController');
 const submissionController = require('../controllers/submissionController');
+const adminAuth = require('../middleware/auth');
 
+// Public: login issues a JWT.
 router.post('/login', adminController.login);
+
+// Everything below this line requires a valid admin JWT.
+router.use(adminAuth);
+
 router.get('/users', adminController.getAllUsers);
 router.get('/tasks', adminController.getAllTasks);
 router.post('/tasks', adminController.createTask);

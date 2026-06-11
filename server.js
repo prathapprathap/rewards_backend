@@ -44,8 +44,16 @@ app.get('/api/db-keep-alive', async (req, res) => {
     }
 });
 
+// ── Public landing site (download page, privacy policy, help & support) ──────
+const PUBLIC_DIR = path.join(__dirname, 'public');
 app.get('/', (req, res) => {
-    res.send('HotReward Backend is running');
+    res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
+});
+app.get('/privacy-policy', (req, res) => {
+    res.sendFile(path.join(PUBLIC_DIR, 'privacy-policy.html'));
+});
+app.get(['/help', '/help-support', '/support'], (req, res) => {
+    res.sendFile(path.join(PUBLIC_DIR, 'help.html'));
 });
 
 // ── Public APK Download (No Login Required) ──────────────────────────────────

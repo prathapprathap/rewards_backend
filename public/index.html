@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rupi Rewards — Earn Instant Rewards</title>
+  <meta name="description" content="Rupi Rewards — complete simple tasks, scratch cards & refer friends. Redeem your points directly via UPI for instant cash!">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --violet:#6D34D6;          /* primary */
+      --violet-dim:#5126B0;      /* secondary */
+      --violet-bright:#8B5CF6;   /* primaryContainer */
+      --lavender:#F5F2FE;        /* background */
+      --lavender-soft:#EADDFE;
+      --gold:#FFC83D;            /* coin gold */
+      --gold-deep:#E8A317;
+      --ink:#1C1235;             /* onSurface */
+      --ink-soft:#5A5070;        /* onSurfaceVariant */
+      --card:#FFFFFF;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;padding:0}
+    body{
+      font-family:'Poppins',-apple-system,Segoe UI,Roboto,sans-serif;
+      color:var(--ink);
+      background:var(--lavender);
+      -webkit-font-smoothing:antialiased;
+    }
+    a{color:inherit}
+
+    /* ───────── Hero ───────── */
+    .hero{
+      position:relative;
+      background:linear-gradient(135deg,var(--violet-dim),var(--violet) 55%,var(--violet-bright));
+      color:#fff;
+      text-align:center;
+      padding:54px 20px 120px;
+      border-bottom-left-radius:42px;
+      border-bottom-right-radius:42px;
+      overflow:hidden;
+    }
+    .hero::before,.hero::after{
+      content:"";position:absolute;border-radius:50%;background:rgba(255,255,255,.08);
+    }
+    .hero::before{width:260px;height:260px;top:-90px;right:-60px}
+    .hero::after{width:200px;height:200px;bottom:-60px;left:-50px}
+    .brand{
+      display:inline-flex;align-items:center;gap:12px;margin-bottom:22px;position:relative;z-index:1;
+    }
+    .brand .logo{
+      width:48px;height:48px;border-radius:14px;
+      background:linear-gradient(135deg,#FFE08A,var(--gold),var(--gold-deep));
+      display:grid;place-items:center;font-size:26px;box-shadow:0 6px 16px rgba(0,0,0,.18);
+    }
+    .brand .name{font-size:1.4rem;font-weight:700;letter-spacing:.3px}
+    .hero h1{margin:0;font-size:2.6rem;line-height:1.15;font-weight:800;position:relative;z-index:1}
+    .hero h1 .accent{
+      background:linear-gradient(135deg,#FFE08A,var(--gold));
+      -webkit-background-clip:text;background-clip:text;color:transparent;
+    }
+    .hero p.sub{
+      font-size:1.12rem;font-weight:300;margin:16px auto 30px;max-width:560px;
+      opacity:.95;position:relative;z-index:1;
+    }
+    .cta{
+      display:inline-flex;align-items:center;gap:10px;
+      background:linear-gradient(135deg,#FFE08A,var(--gold),var(--gold-deep));
+      color:#3D2600;padding:16px 36px;text-decoration:none;font-size:1.15rem;
+      border-radius:50px;font-weight:700;position:relative;z-index:1;
+      box-shadow:0 10px 28px rgba(232,163,23,.45);transition:transform .2s,box-shadow .2s;
+    }
+    .cta:hover{transform:translateY(-3px);box-shadow:0 14px 34px rgba(232,163,23,.55)}
+    .cta .dot{font-size:1.3rem}
+    .hero .hint{font-size:.8rem;opacity:.8;margin-top:14px;position:relative;z-index:1}
+
+    /* ───────── Phone mockup strip ───────── */
+    .phones{
+      display:flex;justify-content:center;gap:18px;flex-wrap:wrap;
+      max-width:1040px;margin:-86px auto 0;padding:0 20px;position:relative;z-index:2;
+    }
+    .phone{
+      width:200px;height:410px;border-radius:30px;
+      background:linear-gradient(160deg,#fff,#F2ECFD);
+      border:6px solid #fff;box-shadow:0 18px 40px rgba(109,52,214,.22);
+      padding:16px 14px;display:flex;flex-direction:column;
+      transform:translateY(0);transition:transform .3s;
+    }
+    .phone:hover{transform:translateY(-8px)}
+    .phone .notch{width:54px;height:6px;border-radius:6px;background:#D8CFEC;margin:0 auto 14px}
+    .phone .pill{
+      background:linear-gradient(135deg,var(--violet-dim),var(--violet));
+      border-radius:18px;color:#fff;padding:16px;text-align:left;margin-bottom:12px;
+    }
+    .phone .pill small{opacity:.85;font-size:.7rem;display:block}
+    .phone .pill b{font-size:1.5rem}
+    .phone .row{
+      display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--lavender-soft);
+      border-radius:14px;padding:10px 12px;margin-bottom:10px;text-align:left;
+    }
+    .phone .row .ic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-size:15px;flex:0 0 auto}
+    .phone .row .tx{font-size:.74rem;font-weight:600;color:var(--ink)}
+    .phone .row .amt{margin-left:auto;font-size:.74rem;font-weight:700;color:var(--gold-deep)}
+    .ic.g{background:#EADDFE}.ic.p{background:#FFE1ED}.ic.t{background:#D6F7F7}.ic.b{background:#DDEBFF}
+
+    /* ───────── Sections ───────── */
+    .section{max-width:960px;margin:46px auto;padding:0 20px}
+    .section h2{
+      font-size:1.7rem;text-align:center;margin:0 0 8px;color:var(--violet);font-weight:700;
+    }
+    .section .lead{text-align:center;color:var(--ink-soft);max-width:620px;margin:0 auto 30px;line-height:1.6}
+    .features{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px}
+    .feature{
+      background:var(--card);border-radius:18px;padding:26px 22px;text-align:center;
+      box-shadow:0 6px 20px rgba(109,52,214,.08);border:1px solid #EFEAFB;
+    }
+    .feature .emoji{
+      width:58px;height:58px;border-radius:16px;display:grid;place-items:center;font-size:28px;
+      margin:0 auto 14px;background:var(--lavender);
+    }
+    .feature h3{margin:0 0 6px;font-size:1.1rem;color:var(--ink)}
+    .feature p{margin:0;font-size:.9rem;color:var(--ink-soft);line-height:1.55}
+
+    /* steps */
+    .steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:18px}
+    .step{background:var(--card);border-radius:18px;padding:24px;box-shadow:0 6px 20px rgba(109,52,214,.08);border:1px solid #EFEAFB}
+    .step .num{
+      width:38px;height:38px;border-radius:50%;display:grid;place-items:center;font-weight:700;color:#fff;
+      background:linear-gradient(135deg,var(--violet),var(--violet-bright));margin-bottom:12px;
+    }
+    .step h3{margin:0 0 6px;font-size:1.05rem}
+    .step p{margin:0;font-size:.88rem;color:var(--ink-soft);line-height:1.55}
+
+    /* bottom download band */
+    .band{
+      max-width:960px;margin:46px auto;padding:42px 24px;text-align:center;
+      background:linear-gradient(135deg,var(--violet-dim),var(--violet) 60%,var(--violet-bright));
+      border-radius:26px;color:#fff;
+    }
+    .band h2{color:#fff;margin:0 0 8px;font-size:1.7rem}
+    .band p{opacity:.92;margin:0 0 22px}
+
+    /* footer */
+    .footer{background:#2A1B52;color:#cfc3ec;padding:30px 20px;text-align:center;font-size:.9rem}
+    .footer .links{margin-bottom:12px}
+    .footer .links a{color:var(--gold);text-decoration:none;font-weight:600;margin:0 14px}
+    .footer .links a:hover{text-decoration:underline}
+    .footer .copy{opacity:.7;font-size:.82rem}
+
+    @media (max-width:768px){
+      .hero h1{font-size:2rem}
+      .hero p.sub{font-size:1rem}
+      .phone{width:46%;height:auto;min-height:320px}
+    }
+    @media (max-width:480px){
+      .hero{padding:40px 16px 110px}
+      .hero h1{font-size:1.7rem}
+      .phone{width:80%}
+      .footer .links a{display:inline-block;margin:6px 10px}
+    }
+  </style>
+</head>
+<body>
+  <!-- ───────── Hero ───────── -->
+  <header class="hero">
+    <div class="brand">
+      <span class="logo">🐹</span>
+      <span class="name" id="brandName">Rupi Rewards</span>
+    </div>
+    <h1>Turn everyday taps into <span class="accent">real cash</span> 💸</h1>
+    <p class="sub">Complete simple tasks, scratch surprise cards and refer friends — then redeem your points straight to UPI for instant cash.</p>
+    <a class="cta" href="/api/download"><span class="dot">⚡</span> Download Now</a>
+    <div class="hint">Free Android app • Fast UPI payouts</div>
+  </header>
+
+  <!-- ───────── Phone preview ───────── -->
+  <section class="phones">
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="pill"><small>Your balance</small><b>₹28.00</b></div>
+      <div class="row"><span class="ic g">🎁</span><span class="tx">Daily Check-In</span><span class="amt">+₹1</span></div>
+      <div class="row"><span class="ic p">⭐</span><span class="tx">Scratch &amp; win</span><span class="amt">+₹10</span></div>
+      <div class="row"><span class="ic t">📺</span><span class="tx">Watch &amp; earn</span><span class="amt">+₹100</span></div>
+    </div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="pill" style="background:linear-gradient(135deg,#FFE08A,#E8A317);color:#3D2600"><small>Available balance</small><b>₹201.00</b></div>
+      <div class="row"><span class="ic b">↗</span><span class="tx">Withdraw to UPI</span><span class="amt">Instant</span></div>
+      <div class="row"><span class="ic g">👥</span><span class="tx">Refer a friend</span><span class="amt">+₹</span></div>
+      <div class="row"><span class="ic p">🏷️</span><span class="tx">Special code</span><span class="amt">Bonus</span></div>
+    </div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="pill"><small>Daily tasks</small><b>Earn More</b></div>
+      <div class="row"><span class="ic t">✅</span><span class="tx">Offerwalls</span><span class="amt">+₹</span></div>
+      <div class="row"><span class="ic g">📅</span><span class="tx">30-day streak gift</span><span class="amt">🎉</span></div>
+      <div class="row"><span class="ic b">💼</span><span class="tx">My Wallet</span><span class="amt">View</span></div>
+    </div>
+  </section>
+
+  <!-- ───────── About / Features ───────── -->
+  <section class="section">
+    <h2>About Rupi Rewards</h2>
+    <p class="lead">Rupi Rewards is an easy-to-use app where you earn reward points by completing simple tasks. Unlock scratch cards, finish offers and watch your wallet grow — then cash out via UPI. Earning rewards made simple and fun!</p>
+    <div class="features">
+      <div class="feature"><div class="emoji">🎯</div><h3>Simple Tasks</h3><p>Try apps and complete quick offers to pile up reward points every day.</p></div>
+      <div class="feature"><div class="emoji">🎟️</div><h3>Scratch &amp; Codes</h3><p>Reveal surprise scratch cards and redeem secret codes for instant bonuses.</p></div>
+      <div class="feature"><div class="emoji">👯</div><h3>Refer &amp; Earn</h3><p>Invite friends with your code and earn unlimited referral rewards.</p></div>
+      <div class="feature"><div class="emoji">⚡</div><h3>Instant UPI Cash</h3><p>Redeem your points directly to UPI for fast, real-money payouts.</p></div>
+    </div>
+  </section>
+
+  <!-- ───────── How it works ───────── -->
+  <section class="section">
+    <h2>How it works</h2>
+    <div class="steps">
+      <div class="step"><div class="num">1</div><h3>Download &amp; sign in</h3><p>Grab the app and sign in with Google in seconds.</p></div>
+      <div class="step"><div class="num">2</div><h3>Earn points</h3><p>Complete daily tasks, offers, scratch cards and referrals.</p></div>
+      <div class="step"><div class="num">3</div><h3>Cash out via UPI</h3><p>Withdraw your balance straight to your UPI — instantly.</p></div>
+    </div>
+  </section>
+
+  <!-- ───────── Bottom download band ───────── -->
+  <section class="band">
+    <h2>Ready to start earning? 🚀</h2>
+    <p>Download Rupi Rewards and claim your first reward today.</p>
+    <a class="cta" href="/api/download"><span class="dot">⚡</span> Download Now</a>
+  </section>
+
+  <!-- ───────── Footer ───────── -->
+  <footer class="footer">
+    <div class="links">
+      <a href="/">Home</a>
+      <a href="/privacy-policy">Privacy Policy</a>
+      <a href="/help">Help &amp; Support</a>
+    </div>
+    <div class="copy">&copy; 2026 Rupi Rewards. All rights reserved.</div>
+  </footer>
+
+  <script>
+    /* Pull admin-controlled details (app name) from app settings — no hardcoding. */
+    (function(){
+      fetch('/api/users/app/settings').then(function(r){return r.json();}).then(function(rows){
+        if(!Array.isArray(rows))return;
+        var s={};rows.forEach(function(o){s[o.setting_key]=o.setting_value;});
+        var name=(s.site_name||'').trim();
+        if(name){
+          document.getElementById('brandName').textContent=name;
+          document.title=name+' — Earn Instant Rewards';
+        }
+      }).catch(function(){});
+    })();
+  </script>
+  <script>
+    /* Disable inspect / devtools shortcuts and right-click. */
+    (function(){
+      document.addEventListener('contextmenu',function(e){e.preventDefault();});
+      document.addEventListener('keydown',function(e){
+        var k=(e.key||'').toLowerCase();
+        if(e.key==='F12'){e.preventDefault();return;}
+        if((e.ctrlKey||e.metaKey)&&e.shiftKey&&(k==='i'||k==='j'||k==='c')){e.preventDefault();return;}
+        if((e.ctrlKey||e.metaKey)&&k==='u'){e.preventDefault();return;}
+      });
+    })();
+  </script>
+</body>
+</html>

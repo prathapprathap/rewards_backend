@@ -2,6 +2,8 @@ const db = require('../config/db');
 const QUERIES = require('../constants/queries');
 const fs = require('fs/promises');
 const path = require('path');
+const jwt = require('jsonwebtoken');
+const { JWT_SECRET, JWT_EXPIRES_IN } = require('../config/jwt');
 
 function getPublicBaseUrl(req) {
     const forwardedProto = req.headers['x-forwarded-proto'];
@@ -370,7 +372,13 @@ exports.login = async (req, res) => {
             if (isMatch) {
                 // Don't send password back
                 const { password, ...adminData } = admin;
-                res.status(200).json({ message: 'Login successful', admin: adminData });
+                // Issue a signed JWT the admin panel sends on every request.
+                const token = jwt.sign(
+                    { id: admin.id, username: admin.username, role: 'admin' },
+                    JWT_SECRET,
+                    { expiresIn: JWT_EXPIRES_IN }
+                );
+                res.status(200).json({ message: 'Login successful', token, admin: adminData });
             } else {
                 res.status(401).json({ message: 'Invalid credentials' });
             }

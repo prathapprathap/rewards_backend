@@ -815,11 +815,28 @@ exports.requestAccountDelete = async (req, res) => {
     }
 };
 
-// Get app settings
+// Keys that must NEVER be exposed to clients (this endpoint is public, no auth).
+// These are server-side secrets read directly from the DB by backend services.
+const SENSITIVE_SETTING_KEYS = new Set([
+    'telegram_bot_token',
+    'telegram_chat_id',
+]);
+// Belt-and-suspenders: also hide any future key whose name looks like a secret.
+const SENSITIVE_KEY_PATTERN = /(token|secret|password|passwd|api_?key|private|webhook)/i;
+
+function isPublicSetting(key) {
+    if (!key) return false;
+    if (SENSITIVE_SETTING_KEYS.has(key)) return false;
+    if (SENSITIVE_KEY_PATTERN.test(key)) return false;
+    return true;
+}
+
+// Get app settings (PUBLIC — secrets are filtered out before responding)
 exports.getAppSettings = async (req, res) => {
     try {
         const [settings] = await db.query('SELECT * FROM app_settings');
-        return res.status(200).json(settings);
+        const safe = settings.filter((row) => isPublicSetting(row.setting_key));
+        return res.status(200).json(safe);
     } catch (error) {
         console.error('Error in getAppSettings:', error);
         return res.status(500).json({ message: 'Server error' });
