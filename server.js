@@ -3,6 +3,7 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const dotenv = require('dotenv');
 const path = require('path');
+const fs = require('fs');
 const db = require('./config/db');
 const userRoutes = require('./routes/userRoutes');
 const adminRoutes = require('./routes/adminRoutes');
@@ -44,33 +45,58 @@ app.get('/api/db-keep-alive', async (req, res) => {
     }
 });
 
-// ── Public landing site (download page, privacy policy, help & support) ──────
-const PUBLIC_DIR = path.join(__dirname, 'public');
-app.get('/', (req, res) => {
-    res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
-});
-app.get('/privacy-policy', (req, res) => {
-    res.sendFile(path.join(PUBLIC_DIR, 'privacy-policy.html'));
-});
-app.get(['/help', '/help-support', '/support'], (req, res) => {
-    res.sendFile(path.join(PUBLIC_DIR, 'help.html'));
-});
-
 // ── Public APK Download (No Login Required) ──────────────────────────────────
-// GET /api/download/:referralCode → Redirects to APK download URL
-// GET /api/download             → Redirects to APK download URL (no referral)
+// Note: the landing site (home / privacy-policy / help) now lives in its own
+// repo and is deployed separately as a static site. This server only exposes
+// the API, including the referral-aware download flow below.
+//
+// The APK is hosted by THIS server: manually upload the built .apk into the
+// backend/uploads/apk/ directory. The newest .apk in that folder is served.
+// GET /api/download/file          → Streams the hosted APK file (binary)
+// GET /api/download/:referralCode → Logs referral + interstitial → APK file
+// GET /api/download               → Streams the APK directly (no referral)
+const APK_DIR = path.join(__dirname, 'uploads', 'apk');
+
+// Resolve the APK to serve: newest *.apk file dropped into uploads/apk/.
+function resolveApkFile() {
+    try {
+        const files = fs.readdirSync(APK_DIR)
+            .filter((f) => f.toLowerCase().endsWith('.apk'))
+            .map((f) => {
+                const full = path.join(APK_DIR, f);
+                return { full, mtime: fs.statSync(full).mtimeMs };
+            })
+            .sort((a, b) => b.mtime - a.mtime);
+        return files[0]?.full || null;
+    } catch (e) {
+        // Directory missing or unreadable → no APK available
+        return null;
+    }
+}
+
+// Stream the hosted APK as a download. Returns 404 if none has been uploaded.
+function sendApkFile(req, res) {
+    const apkPath = resolveApkFile();
+    if (!apkPath) {
+        return res.status(404).json({
+            message: 'APK download not available. Please contact support.'
+        });
+    }
+    res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+    return res.download(apkPath, 'app-release.apk', (err) => {
+        if (err && !res.headersSent) {
+            console.error('Error streaming APK:', err);
+            res.status(500).end();
+        }
+    });
+}
+
 async function handleDownload(req, res) {
     try {
         const referralCode = req.params.referralCode || req.query.ref || '';
 
-        // Get APK download URL from settings
-        const [settings] = await db.query(
-            'SELECT setting_value FROM app_settings WHERE setting_key = ?',
-            ['apk_download_url']
-        );
-
-        const downloadUrl = settings[0]?.setting_value?.trim();
-        if (!downloadUrl) {
+        // Make sure an APK is actually available before doing anything else.
+        if (!resolveApkFile()) {
             return res.status(404).json({
                 message: 'APK download not available. Please contact support.'
             });
@@ -81,7 +107,7 @@ async function handleDownload(req, res) {
             try {
                 // 1. Log the click for analytics
                 await db.query(
-                    `INSERT INTO referral_downloads (referral_code, ip_address, user_agent, created_at) 
+                    `INSERT INTO referral_downloads (referral_code, ip_address, user_agent, created_at)
                      VALUES (?, ?, ?, NOW())`,
                     [referralCode, req.ip, req.headers['user-agent'] || '']
                 );
@@ -93,7 +119,7 @@ async function handleDownload(req, res) {
                 await db.query('DELETE FROM referral_attributions WHERE ip_address = ? AND user_agent = ?', [req.ip, userAgent]);
 
                 await db.query(
-                    `INSERT INTO referral_attributions (ip_address, user_agent, referral_code, created_at) 
+                    `INSERT INTO referral_attributions (ip_address, user_agent, referral_code, created_at)
                      VALUES (?, ?, ?, NOW())`,
                     [req.ip, userAgent, referralCode]
                 );
@@ -102,15 +128,17 @@ async function handleDownload(req, res) {
             }
         }
 
-        // If there's no referral code, redirect directly to the APK
+        // If there's no referral code, stream the APK directly.
         if (!referralCode) {
-            return res.redirect(302, downloadUrl);
+            return sendApkFile(req, res);
         }
 
         // With a referral code, serve an interstitial page that copies the
         // code to the clipboard before starting the APK download. The Flutter
         // app's login screen scans the clipboard on first launch and applies
         // the code automatically.
+        const forwardedProto = (req.headers['x-forwarded-proto'] || req.protocol || 'http').split(',')[0].trim();
+        const downloadUrl = `${forwardedProto}://${req.get('host')}/api/download/file`;
         const safeCode = String(referralCode).replace(/[^A-Za-z0-9]/g, '').toUpperCase();
         const safeUrl = downloadUrl.replace(/"/g, '&quot;');
         const clipboardPayload = `referral code: ${safeCode}`;
@@ -179,6 +207,7 @@ async function handleDownload(req, res) {
     }
 }
 app.get('/api/download', handleDownload);
+app.get('/api/download/file', sendApkFile); // direct binary, must precede :referralCode
 app.get('/api/download/:referralCode', handleDownload);
 
 app.listen(PORT, () => {
