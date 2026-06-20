@@ -82,10 +82,15 @@ async function sendPush(tokens, { title, body, imageUrl, data }) {
             resp.responses.forEach((r, idx) => {
                 if (!r.success) {
                     const code = r.error && r.error.code;
+                    // Only purge tokens FCM reports as DEFINITIVELY dead.
+                    // 'invalid-argument' is intentionally excluded — it can fire
+                    // on transient/config issues (e.g. credential/sender mismatch)
+                    // and was previously wiping otherwise-valid tokens.
                     if (code === 'messaging/registration-token-not-registered' ||
-                        code === 'messaging/invalid-registration-token' ||
-                        code === 'messaging/invalid-argument') {
+                        code === 'messaging/invalid-registration-token') {
                         invalidTokens.push(chunk[idx]);
+                    } else {
+                        console.warn('[fcm] send failed (token kept):', code);
                     }
                 }
             });
