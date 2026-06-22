@@ -143,7 +143,9 @@ async function getOfferwallOffers(req, res) {
                     ? completedSteps >= totalSteps
                     : (completedEventNames[offer.id]?.size || 0) > 0;
                 const isAllCompleted = eventsCompleted || approvedSubmissionOfferIds.has(offer.id);
-                return !isAllCompleted && !submittedOfferIds.has(offer.id);
+                // Keep pending submissions visible (detail screen shows a
+                // "Pending" badge); hide only once approved/completed.
+                return !isAllCompleted;
             });
         }
 
