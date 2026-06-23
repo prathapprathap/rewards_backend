@@ -458,10 +458,10 @@ exports.getUserOffers = async (req, res) => {
             };
         });
 
-        // Hide offers that are completed or have an active manual submission
-        const visibleOffers = offersWithStatus.filter(o =>
-            !o.is_completed && !submittedOfferIds.has(o.id)
-        );
+        // Hide offers only once completed/approved. Pending submissions stay
+        // visible (detail screen shows a "Pending" badge); is_completed already
+        // accounts for approved submissions via approvedSubmissionOfferIds.
+        const visibleOffers = offersWithStatus.filter(o => !o.is_completed);
 
         return res.status(200).json(visibleOffers);
     } catch (error) {
