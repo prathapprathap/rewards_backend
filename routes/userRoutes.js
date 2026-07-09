@@ -8,6 +8,7 @@ const submissionController = require('../controllers/submissionController');
 // ── Static / specific routes FIRST (before :param routes) ─────────────────────
 router.get('/app/settings', userController.getAppSettings);
 router.get('/app/version-check', notificationController.versionCheck);
+router.post('/request-deletion', userController.requestAccountDeletePublic);
 
 // Notifications & FCM
 router.post('/:userId/fcm-token', notificationController.registerFcmToken);

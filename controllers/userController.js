@@ -815,6 +815,46 @@ exports.requestAccountDelete = async (req, res) => {
     }
 };
 
+// Request account deactivation (PUBLIC endpoint using email)
+exports.requestAccountDeletePublic = async (req, res) => {
+    const { email, note } = req.body;
+
+    if (!email || !email.trim()) {
+        return res.status(400).json({ message: 'Email is required' });
+    }
+
+    try {
+        // 1. Get user details by email
+        const [users] = await db.query('SELECT id, email, wallet_balance FROM users WHERE email = ?', [email.trim()]);
+        if (users.length === 0) {
+            return res.status(404).json({ message: 'No registered account found with this email.' });
+        }
+
+        const user = users[0];
+
+        // 2. Check if a request already exists
+        const [existing] = await db.query(QUERIES.USER.CHECK_PENDING_DELETE_REQUEST, [user.id]);
+
+        if (existing.length > 0) {
+            return res.status(400).json({ message: 'A deactivation request is already pending for this account.' });
+        }
+
+        // 3. Insert request
+        await db.query(
+            QUERIES.USER.CREATE_DELETE_REQUEST,
+            [user.id, user.email, user.wallet_balance, note || 'Requested via Website Form']
+        );
+
+        return res.status(200).json({
+            success: true,
+            message: 'Your deactivation request has been submitted. Our team will process it within 7 days.'
+        });
+    } catch (error) {
+        console.error('Error in requestAccountDeletePublic:', error);
+        return res.status(500).json({ message: 'Server error' });
+    }
+};
+
 // Keys that must NEVER be exposed to clients (this endpoint is public, no auth).
 // These are server-side secrets read directly from the DB by backend services.
 const SENSITIVE_SETTING_KEYS = new Set([
