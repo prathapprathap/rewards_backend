@@ -8,6 +8,50 @@ function generateClickId() {
     return crypto.randomBytes(32).toString('hex');
 }
 
+// Fill named macros like {device_id} in a tracking URL with real values.
+// Behaviour (Option B): if a query parameter's value contains a macro whose
+// value is missing/empty (e.g. user has no device_id) OR is unknown, the
+// WHOLE parameter is dropped so no empty/broken value is ever sent.
+// Path macros (rare, e.g. {clickid} in a path segment) are replaced with ''
+// when missing since a path segment cannot be cleanly removed.
+function buildTrackingUrl(rawUrl, macros) {
+    const isEmpty = (v) => v === null || v === undefined || v === '';
+    const macroRe = /\{(\w+)\}/g;
+
+    let url;
+    try {
+        url = new URL(rawUrl);
+    } catch (e) {
+        // Malformed URL: fall back to a plain global replace (missing -> '')
+        return rawUrl.replace(macroRe, (_m, key) =>
+            !isEmpty(macros[key]) ? encodeURIComponent(String(macros[key])) : ''
+        );
+    }
+
+    // Path: substitute in place, drop-to-empty when missing
+    url.pathname = url.pathname.replace(macroRe, (_m, key) =>
+        !isEmpty(macros[key]) ? encodeURIComponent(String(macros[key])) : ''
+    );
+
+    // Query: fill, or drop the whole param if any of its macros is missing/unknown
+    const params = url.searchParams;
+    for (const key of [...params.keys()]) {
+        const val = params.get(key);
+        const tokens = [...val.matchAll(macroRe)].map((m) => m[1]);
+        if (tokens.length === 0) continue; // static param (e.g. cid=60) -> keep as-is
+
+        const hasMissing = tokens.some((t) => isEmpty(macros[t]));
+        if (hasMissing) {
+            params.delete(key); // Option B: drop the entire parameter
+        } else {
+            // URLSearchParams.set handles encoding — pass the raw value
+            params.set(key, val.replace(macroRe, (_m, t) => String(macros[t])));
+        }
+    }
+
+    return url.toString();
+}
+
 // Track offer click and generate tracking URL
 async function trackClick(req, res) {
     try {
@@ -80,20 +124,41 @@ async function trackClick(req, res) {
             trackingUrl = 'https://' + trackingUrl;
         }
 
-        // 2. Replacements
-        let finalUrl = trackingUrl
-            .replace('{clickid}', clickId)
-            .replace('{click_id}', clickId)
-            .replace('{cid}', clickId)           // Offer18 click ID macro
-            .replace('{p1}', clickId)             // Offer18 Affiliate Click ID macro
-            .replace('{user_id}', userId)
-            .replace('{offer_id}', offerId);
+        // 2. Load the user's personal fields for macro substitution
+        const [userRows] = await db.query(
+            'SELECT google_id, email, name, device_id, upi_id FROM users WHERE id = ?',
+            [userId]
+        );
+        const user = userRows[0] || {};
 
-        // 3. Auto-append click_id if no replacement happened (Important for legacy redirect scripts)
-        // If the URL is just a generic link without macros, we MUST append the tracking param
-        if (finalUrl === trackingUrl) {
+        // Macro menu. Admin uses any subset in the tracking link (e.g. {device_id}).
+        // Always-present macros never get dropped; personal ones drop their param
+        // when empty (Option B).
+        const macros = {
+            // click id (several aliases used by different networks)
+            clickid: clickId,
+            click_id: clickId,
+            cid: clickId,
+            p1: clickId,
+            // always available
+            user_id: userId,
+            offer_id: offerId,
+            amount: offer.amount,
+            // personal (dropped if missing for this user)
+            device_id: user.device_id || deviceId,
+            google_id: user.google_id,
+            email: user.email,
+            name: user.name,
+            upi_id: user.upi_id,
+        };
+
+        // 3. Substitute named macros (drops params with missing values)
+        let finalUrl = buildTrackingUrl(trackingUrl, macros);
+
+        // 4. Auto-append tracking params ONLY for legacy links that use no macros
+        // at all (e.g. a plain "?cid=60&uid=120"), so postbacks can still be matched.
+        if (!/\{\w+\}/.test(trackingUrl)) {
             const separator = finalUrl.includes('?') ? '&' : '?';
-            // Use 'p1' as the primary tracking parameter (compatible with Offer18 and custom scripts)
             finalUrl += `${separator}p1=${clickId}&p2=${userId}&offerId=${offerId}`;
         }
 
