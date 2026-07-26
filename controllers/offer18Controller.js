@@ -216,17 +216,25 @@ async function trackDeviceFingerprint(userId, deviceId, ipAddress, userAgent) {
 // offer_event_steps to determine the per-step reward.
 async function handlePostback(req, res) {
     try {
-        // Accept click ID from multiple parameter names:
-        //   - {p1}      → Our click ID passed in tracking URL (p1={clickid}) ← PRIMARY
-        //   - {clickid} → explicit clickid param
-        //   - {click_id}→ alternative format
-        // NOTE: cid = campaign ID in this Offer18 setup, NOT click ID
+        // Matching is by offer_id + device_id ONLY — click_id is not used to
+        // find the click record (still accepted/logged if sent, but ignored
+        // for lookup purposes).
+        // Guard against the ad network sending back its own macro token
+        // unsubstituted (e.g. literal "{deviceid}") instead of a real value —
+        // treat those as absent rather than trying to match on garbage.
+        const isUnsubstitutedMacro = (v) => typeof v === 'string' && /^\{.*\}$/.test(v.trim());
+
         let clickid = req.query.p1 || req.query.clickid || req.query.click_id;
-        const deviceid = req.query.device_id || req.query.deviceid;
+        if (isUnsubstitutedMacro(clickid)) clickid = undefined;
+
+        let deviceid = req.query.device_id || req.query.deviceid;
+        if (isUnsubstitutedMacro(deviceid)) deviceid = undefined;
+
         const payout = req.query.payout;
         const status = req.query.status;
         const event = req.query.event;
-        const offerid = req.query.offerid || req.query.offerId || req.query.oid; // Support both cases and oid
+        let offerid = req.query.offerid || req.query.offerId || req.query.oid; // Support both cases and oid
+        if (isUnsubstitutedMacro(offerid)) offerid = undefined;
         const ipAddress = req.ip || req.connection.remoteAddress;
 
         console.log('📥 Postback received:', { clickid, deviceid, payout, status, event, offerid, raw: req.query });
@@ -235,47 +243,40 @@ async function handlePostback(req, res) {
         const [logResult] = await db.query(
             `INSERT INTO postback_logs (click_id, offer_id, raw_data, ip_address, status)
             VALUES (?, ?, ?, ?, ?)`,
-            [clickid || null, offerid || null, JSON.stringify(req.query), ipAddress, 'pending']
+            [clickid || deviceid || null, offerid || null, JSON.stringify(req.query), ipAddress, 'pending']
         );
         const logId = logResult.insertId;
 
-        // Validate required parameters: need either a click_id or a device_id
-        // to identify which click this postback belongs to.
-        if (!clickid && !deviceid) {
-            await logPostbackError(null, offerid, req.query, ipAddress, 'Missing click_id and device_id', logId);
-            return res.status(400).send('ERROR: Missing click_id or device_id');
+        // Validate required parameters: offer_id + device_id are required to
+        // identify which click this postback belongs to.
+        if (!offerid || !deviceid) {
+            const rawDeviceid = req.query.device_id || req.query.deviceid;
+            const rawOfferid = req.query.offerid || req.query.offerId || req.query.oid;
+            const reason = isUnsubstitutedMacro(rawDeviceid) || isUnsubstitutedMacro(rawOfferid)
+                ? `Macro not substituted by network (got literal "${rawDeviceid || rawOfferid}") — check the postback URL is saved/enabled for this offer in the network's dashboard`
+                : 'Missing offer_id and/or device_id';
+            await logPostbackError(clickid, offerid, req.query, ipAddress, reason, logId);
+            return res.status(400).send(`ERROR: ${reason}`);
         }
 
-        // Find the click record: match by click_id first (most specific).
-        // Fall back to device_id + offer_id when click_id is absent or doesn't
-        // match, since offer_clicks now holds one row per (user, offer) and
-        // device_id is always sourced from users.device_id (see trackClick).
-        let click = null;
-
-        if (clickid) {
-            const [clicks] = await db.query(
-                'SELECT * FROM offer_clicks WHERE click_id = ?',
-                [clickid]
-            );
-            click = clicks[0] || null;
-        }
-
-        if (!click && deviceid) {
-            const deviceQuery = offerid
-                ? { sql: 'SELECT * FROM offer_clicks WHERE device_id = ? AND offer_id = ? ORDER BY created_at DESC LIMIT 1', params: [deviceid, offerid] }
-                : { sql: 'SELECT * FROM offer_clicks WHERE device_id = ? ORDER BY created_at DESC LIMIT 1', params: [deviceid] };
-            const [clicks] = await db.query(deviceQuery.sql, deviceQuery.params);
-            click = clicks[0] || null;
-        }
+        // Find the click record by (offer_id, device_id) — one row per
+        // (user, offer) in offer_clicks, and device_id is always sourced from
+        // users.device_id (see trackClick), so this pair uniquely identifies
+        // the click.
+        const [clicks] = await db.query(
+            'SELECT * FROM offer_clicks WHERE offer_id = ? AND device_id = ? ORDER BY created_at DESC LIMIT 1',
+            [offerid, deviceid]
+        );
+        const click = clicks[0] || null;
 
         if (!click) {
-            await logPostbackError(clickid, offerid, req.query, ipAddress, 'Click not found (checked click_id and device_id)', logId);
+            await logPostbackError(clickid, offerid, req.query, ipAddress, 'Click not found (checked offer_id + device_id)', logId);
             return res.status(404).send('ERROR: Click not found');
         }
 
-        // Downstream logic keys everything off `clickid` — make sure it
-        // reflects the click record we actually matched, even when the match
-        // came from device_id.
+        // Downstream logic keys everything off `clickid` — use the matched
+        // click record's real click_id regardless of what (if anything) the
+        // postback itself sent.
         clickid = click.click_id;
         const eventNameFromQuery = event || 'default';
 
