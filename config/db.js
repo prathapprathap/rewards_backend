@@ -346,6 +346,7 @@ const initDB = async () => {
       ['maintenance_mode', 'Off', 'System maintenance mode status'],
       ['refer_text', 'When your referred friends signup they will get a bonus!', 'Text shown for referral invites'],
       ['app_package_name', '', 'Android package name for Play Store Rate Us link'],
+      ['rate_us_url', '', 'Rate Us link (Play Store / App Store) - overrides app_package_name if set'],
       ['privacy_policy_url', '', 'Privacy policy page URL'],
       ['help_support_url', '', 'Help & support page URL'],
       ['currency_symbol', '₹', 'Currency symbol used across the app'],
