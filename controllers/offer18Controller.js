@@ -109,6 +109,22 @@ async function trackClick(req, res) {
         // Generate unique click ID
         const clickId = generateClickId();
 
+        // Re-click on the same (user_id, offer_id): the upsert below is about
+        // to overwrite click_id on the existing row. If the ad network already
+        // captured the OLD click_id from an earlier click, a postback using it
+        // would otherwise 404 with "Click not found". Stash it first so
+        // handlePostback can still resolve it back to this row.
+        const [existingClickRow] = await db.query(
+            'SELECT id, click_id FROM offer_clicks WHERE user_id = ? AND offer_id = ?',
+            [userId, offerId]
+        );
+        if (existingClickRow[0] && existingClickRow[0].click_id !== clickId) {
+            await db.query(
+                'INSERT INTO offer_clicks_id_history (old_click_id, offer_click_row_id) VALUES (?, ?)',
+                [existingClickRow[0].click_id, existingClickRow[0].id]
+            );
+        }
+
         // One row per (user_id, offer_id): first click inserts, re-clicks just
         // refresh the click_id/device_id/status on the same row so postbacks
         // always have exactly one click record to match against.
@@ -306,8 +322,22 @@ async function handlePostback(req, res) {
             click = clicks[0] || null;
         }
 
+        // Last resort: click_id may be stale — a later re-click on the same
+        // offer overwrote it on the row (see trackClick). Resolve it via the
+        // history table to the row it originally belonged to.
+        if (!click && clickid) {
+            const [history] = await db.query(
+                `SELECT oc.* FROM offer_clicks_id_history h
+                JOIN offer_clicks oc ON oc.id = h.offer_click_row_id
+                WHERE h.old_click_id = ?
+                ORDER BY h.created_at DESC LIMIT 1`,
+                [clickid]
+            );
+            click = history[0] || null;
+        }
+
         if (!click) {
-            await logPostbackError(clickid, offerid, req.query, ipAddress, 'Click not found (checked click_id, click_row_id, and device_id+offer_id)', logId);
+            await logPostbackError(clickid, offerid, req.query, ipAddress, 'Click not found (checked click_id, click_row_id, device_id+offer_id, and click_id history)', logId);
             return res.status(404).send('ERROR: Click not found');
         }
 
