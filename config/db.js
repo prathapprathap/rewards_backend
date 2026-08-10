@@ -184,11 +184,14 @@ const initDB = async () => {
         amount DECIMAL(10, 2) NOT NULL,
         method VARCHAR(50) NOT NULL,
         details TEXT,
-        status ENUM('PENDING', 'APPROVED', 'REJECTED') DEFAULT 'PENDING',
+        status ENUM('PENDING', 'APPROVED', 'PAID', 'REJECTED') DEFAULT 'PENDING',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
+    await runSafeQuery("ALTER TABLE withdrawals MODIFY COLUMN status ENUM('PENDING', 'APPROVED', 'PAID', 'REJECTED') DEFAULT 'PENDING'");
+    await runSafeQuery("ALTER TABLE withdrawals ADD COLUMN gateway_status VARCHAR(50) DEFAULT NULL");
+    await runSafeQuery("ALTER TABLE withdrawals ADD COLUMN paid_at TIMESTAMP NULL DEFAULT NULL");
 
     await promisePool.query(`
       CREATE TABLE IF NOT EXISTS scratched_offers (
@@ -271,6 +274,47 @@ const initDB = async () => {
         verified TINYINT(1) DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
+    // ─── RupiyaX Payout Gateway ───
+
+    await runSafeQuery("ALTER TABLE user_payment_accounts ADD COLUMN rupiyax_beneficiary_id VARCHAR(100) DEFAULT NULL");
+
+    await promisePool.query(`
+      CREATE TABLE IF NOT EXISTS beneficiaries (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        payment_account_id INT NOT NULL,
+        user_id INT NOT NULL,
+        rupiyax_beneficiary_id VARCHAR(100),
+        name VARCHAR(255) NOT NULL,
+        method VARCHAR(20) NOT NULL,
+        detail1 VARCHAR(255) NOT NULL,
+        detail2 VARCHAR(255),
+        status VARCHAR(50),
+        raw_response JSON,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (payment_account_id) REFERENCES user_payment_accounts(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
+    await promisePool.query(`
+      CREATE TABLE IF NOT EXISTS payouts (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        withdrawal_id INT NOT NULL,
+        beneficiary_id INT,
+        rupiyax_trx_id VARCHAR(100),
+        ref_id VARCHAR(100),
+        amount DECIMAL(10, 2),
+        fee DECIMAL(10, 2),
+        status VARCHAR(50) DEFAULT 'pending',
+        utr VARCHAR(100),
+        raw_response JSON,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (withdrawal_id) REFERENCES withdrawals(id) ON DELETE CASCADE,
+        FOREIGN KEY (beneficiary_id) REFERENCES beneficiaries(id) ON DELETE SET NULL
       )
     `);
 

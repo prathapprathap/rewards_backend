@@ -4,6 +4,7 @@ const fs = require('fs/promises');
 const path = require('path');
 const jwt = require('jsonwebtoken');
 const { JWT_SECRET, JWT_EXPIRES_IN } = require('../config/jwt');
+const rupiyaXService = require('../services/rupiyaXService');
 
 function getPublicBaseUrl(req) {
     const forwardedProto = req.headers['x-forwarded-proto'];
@@ -489,54 +490,189 @@ exports.getWithdrawals = async (req, res) => {
     }
 };
 
+// GET /withdrawals/:id/gateway-status — live poll RupiyaX for this withdrawal's latest payout status.
+exports.getWithdrawalGatewayStatus = async (req, res) => {
+    const { id } = req.params;
+    try {
+        const [[payout]] = await db.query(
+            'SELECT id, rupiyax_trx_id, ref_id FROM payouts WHERE withdrawal_id = ? ORDER BY created_at DESC LIMIT 1',
+            [id]
+        );
+        if (!payout || (!payout.rupiyax_trx_id && !payout.ref_id)) {
+            return res.status(404).json({ message: 'No RupiyaX payout found for this withdrawal yet' });
+        }
+
+        const gateway = await rupiyaXService.checkPayoutStatus({ trx_id: payout.rupiyax_trx_id, ref_id: payout.ref_id });
+
+        if (gateway?.success && gateway.data) {
+            await db.query(
+                'UPDATE payouts SET status = ?, utr = ?, raw_response = ?, updated_at = NOW() WHERE id = ?',
+                [gateway.data.status || null, gateway.data.utr || null, JSON.stringify(gateway), payout.id]
+            );
+            await db.query('UPDATE withdrawals SET gateway_status = ? WHERE id = ?', [gateway.data.status || null, id]);
+            if (gateway.data.status === 'success') {
+                await db.query(`UPDATE withdrawals SET status = 'PAID', paid_at = NOW() WHERE id = ? AND status != 'REJECTED'`, [id]);
+            }
+        }
+
+        res.status(200).json({ gateway });
+    } catch (error) {
+        console.error('Error checking gateway status:', error);
+        res.status(500).json({ message: 'Server error: ' + error.message });
+    }
+};
+
+// GET /rupiyax/wallet-balance — live RupiyaX wallet balance (funds available to pay out).
+exports.getRupiyaXWalletBalance = async (req, res) => {
+    try {
+        const gateway = await rupiyaXService.getWalletBalance();
+        res.status(200).json({ gateway });
+    } catch (error) {
+        console.error('Error fetching RupiyaX wallet balance:', error);
+        res.status(500).json({ message: 'Server error: ' + error.message });
+    }
+};
+
+// Trigger a RupiyaX payout for a withdrawal being approved, and record the response.
+// Returns { paid: boolean, gateway: <raw response> }.
+async function payoutForWithdrawal(id) {
+    const [[withdrawal]] = await db.query(
+        'SELECT id, user_id, amount, method, details FROM withdrawals WHERE id = ?', [id]
+    );
+    if (!withdrawal) return { paid: false, gateway: { success: false, message: 'Withdrawal not found' } };
+
+    const [[beneficiary]] = await db.query(
+        `SELECT b.id, b.rupiyax_beneficiary_id FROM beneficiaries b
+         JOIN user_payment_accounts upa ON upa.id = b.payment_account_id
+         WHERE upa.user_id = ? ORDER BY upa.is_primary DESC, b.created_at DESC LIMIT 1`,
+        [withdrawal.user_id]
+    );
+
+    if (!beneficiary?.rupiyax_beneficiary_id) {
+        const gateway = { success: false, message: 'No registered RupiyaX beneficiary for this user' };
+        await db.query(
+            `INSERT INTO payouts (withdrawal_id, beneficiary_id, amount, status, raw_response)
+             VALUES (?, ?, ?, ?, ?)`,
+            [id, beneficiary?.id || null, withdrawal.amount, 'failed', JSON.stringify(gateway)]
+        );
+        return { paid: false, gateway };
+    }
+
+    const gateway = await rupiyaXService.requestPayout({
+        beneficiary_id: beneficiary.rupiyax_beneficiary_id,
+        amount: parseFloat(withdrawal.amount),
+        ref_id: `WD${withdrawal.id}`,
+        comment: `Withdrawal #${withdrawal.id}`,
+    });
+
+    await db.query(
+        `INSERT INTO payouts (withdrawal_id, beneficiary_id, rupiyax_trx_id, ref_id, amount, fee, status, raw_response)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, beneficiary.id, gateway?.data?.trx_id || null, gateway?.data?.ref_id || `WD${withdrawal.id}`,
+         withdrawal.amount, gateway?.data?.fee || null, gateway?.data?.status || (gateway?.success ? 'pending' : 'failed'),
+         JSON.stringify(gateway || {})]
+    );
+
+    await db.query('UPDATE withdrawals SET gateway_status = ? WHERE id = ?', [gateway?.data?.status || (gateway?.success ? 'pending' : 'failed'), id]);
+
+    return { paid: !!gateway?.success, gateway };
+}
+
+// Apply an APPROVED/REJECTED status to one withdrawal: trigger payout (if approving) or refund (if rejecting).
+async function applyWithdrawalStatus(id, status) {
+    let gateway = null;
+    if (status === 'APPROVED') {
+        const result = await payoutForWithdrawal(id);
+        gateway = result.gateway;
+        if (!result.paid) {
+            return { ok: false, message: gateway?.message || 'RupiyaX payout failed', gateway };
+        }
+    }
+
+    await db.query(QUERIES.ADMIN.UPDATE_WITHDRAWAL_STATUS, [status, status, id]);
+
+    // Update the status in wallet_transactions table too
+    const wtStatus = status === 'APPROVED' || status === 'PAID' ? 'success' : (status === 'REJECTED' ? 'rejected' : 'pending');
+    await db.query('UPDATE wallet_transactions SET status = ? WHERE withdrawal_id = ?', [wtStatus, id]);
+
+    // If rejected, refund the amount
+    if (status === 'REJECTED') {
+        const [withdrawalRows] = await db.query(QUERIES.ADMIN.GET_WITHDRAWAL_BY_ID, [id]);
+        if (withdrawalRows.length > 0) {
+            const { user_id, amount } = withdrawalRows[0];
+            const refundAmount = parseFloat(amount);
+
+            // Fetch current balance for accurate transaction logging
+            const [userRows] = await db.query(QUERIES.USER.GET_WALLET_BALANCE, [user_id]);
+            const balanceBefore = parseFloat(userRows[0]?.wallet_balance || 0);
+            const balanceAfter = balanceBefore + refundAmount;
+
+            // Refund to main balance
+            await db.query(QUERIES.USER.UPDATE_BALANCE_ADD, [refundAmount, user_id]);
+
+            // Record Refund transaction
+            await db.query(
+                `INSERT INTO wallet_transactions
+                (user_id, transaction_type, currency_type, amount, balance_before, balance_after, description, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                [user_id, 'refund', 'cash', refundAmount, balanceBefore, balanceAfter, `Refund: Withdrawal Request #${id} Rejected`, 'success']
+            );
+
+            // Refund to breakdown ledger
+            await db.query(
+                'UPDATE user_wallet_breakdown SET cash = cash + ? WHERE user_id = ?',
+                [refundAmount, user_id]
+            );
+        }
+    }
+
+    return { ok: true, gateway };
+}
+
 // Update withdrawal status
 exports.updateWithdrawalStatus = async (req, res) => {
     const { id } = req.params;
     const { status } = req.body; // APPROVED or REJECTED
 
     try {
-        await db.query(QUERIES.ADMIN.UPDATE_WITHDRAWAL_STATUS, [status, status, id]);
-
-        // Update the status in wallet_transactions table too
-        const wtStatus = status === 'APPROVED' || status === 'PAID' ? 'success' : (status === 'REJECTED' ? 'rejected' : 'pending');
-        await db.query('UPDATE wallet_transactions SET status = ? WHERE withdrawal_id = ?', [wtStatus, id]);
-
-        // If rejected, refund the amount
-        if (status === 'REJECTED') {
-            const [withdrawalRows] = await db.query(QUERIES.ADMIN.GET_WITHDRAWAL_BY_ID, [id]);
-            if (withdrawalRows.length > 0) {
-                const { user_id, amount } = withdrawalRows[0];
-                const refundAmount = parseFloat(amount);
-
-                // Fetch current balance for accurate transaction logging
-                const [userRows] = await db.query(QUERIES.USER.GET_WALLET_BALANCE, [user_id]);
-                const balanceBefore = parseFloat(userRows[0]?.wallet_balance || 0);
-                const balanceAfter = balanceBefore + refundAmount;
-
-                // Refund to main balance
-                await db.query(QUERIES.USER.UPDATE_BALANCE_ADD, [refundAmount, user_id]);
-
-                // Record Refund transaction
-                await db.query(
-                    `INSERT INTO wallet_transactions 
-                    (user_id, transaction_type, currency_type, amount, balance_before, balance_after, description, status) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-                    [user_id, 'refund', 'cash', refundAmount, balanceBefore, balanceAfter, `Refund: Withdrawal Request #${id} Rejected`, 'success']
-                );
-
-                // Refund to breakdown ledger
-                await db.query(
-                    'UPDATE user_wallet_breakdown SET cash = cash + ? WHERE user_id = ?',
-                    [refundAmount, user_id]
-                );
-            }
+        const result = await applyWithdrawalStatus(id, status);
+        if (!result.ok) {
+            return res.status(502).json({ message: `Withdrawal not approved: ${result.message}`, gateway: result.gateway });
         }
-
-        res.status(200).json({ message: 'Withdrawal status updated' });
+        res.status(200).json({ message: 'Withdrawal status updated', gateway: result.gateway });
     } catch (error) {
         console.error('Error updating withdrawal:', error);
         res.status(500).json({ message: 'Server error: ' + error.message });
     }
+};
+
+// Bulk update withdrawal status (admin selects multiple rows and approves/rejects together)
+exports.bulkUpdateWithdrawalStatus = async (req, res) => {
+    const { ids, status } = req.body; // ids: number[], status: APPROVED or REJECTED
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ message: 'ids must be a non-empty array' });
+    }
+    if (!['APPROVED', 'REJECTED'].includes(status)) {
+        return res.status(400).json({ message: 'status must be APPROVED or REJECTED' });
+    }
+
+    const results = [];
+    for (const id of ids) {
+        try {
+            const result = await applyWithdrawalStatus(id, status);
+            results.push({ id, ok: result.ok, message: result.ok ? 'success' : result.message });
+        } catch (error) {
+            console.error(`Error applying bulk status to withdrawal ${id}:`, error);
+            results.push({ id, ok: false, message: error.message });
+        }
+    }
+
+    const succeeded = results.filter(r => r.ok).length;
+    res.status(200).json({
+        message: `${succeeded}/${ids.length} withdrawals ${status.toLowerCase()}`,
+        results,
+    });
 };
 
 // Get all app settings
@@ -1124,7 +1260,41 @@ exports.createPaymentAccount = async (req, res) => {
             [user_id, account_type, upi_id || null, bank_name || null,
              account_holder || null, account_number || null, ifsc_code || null, is_primary ? 1 : 0]
         );
-        res.status(201).json({ message: 'Payment account added', id: result.insertId });
+        const paymentAccountId = result.insertId;
+
+        // Register this account as a beneficiary with RupiyaX (admin-triggered)
+        const [[user]] = await db.query('SELECT name, email FROM users WHERE id = ?', [user_id]);
+        const method = account_type === 'upi' ? 'upi' : 'imps';
+        const detail1 = account_type === 'upi' ? upi_id : account_number;
+        const detail2 = account_type === 'upi' ? undefined : ifsc_code;
+        const beneficiaryName = account_holder || user?.name || 'Unknown';
+
+        const gatewayResp = await rupiyaXService.addBeneficiary({
+            name: beneficiaryName,
+            method,
+            detail1,
+            detail2,
+            email: user?.email,
+        });
+
+        const gatewayBeneficiaryId = gatewayResp?.data?.beneficiary_id || null;
+        await db.query(
+            `INSERT INTO beneficiaries
+             (payment_account_id, user_id, rupiyax_beneficiary_id, name, method, detail1, detail2, status, raw_response)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [paymentAccountId, user_id, gatewayBeneficiaryId, beneficiaryName, method, detail1, detail2 || null,
+             gatewayResp?.data?.status || (gatewayResp?.success ? 'registered' : 'failed'), JSON.stringify(gatewayResp || {})]
+        );
+
+        if (gatewayBeneficiaryId) {
+            await db.query('UPDATE user_payment_accounts SET rupiyax_beneficiary_id = ? WHERE id = ?', [gatewayBeneficiaryId, paymentAccountId]);
+        }
+
+        res.status(201).json({
+            message: gatewayResp?.success ? 'Payment account added and beneficiary registered' : 'Payment account added, but RupiyaX beneficiary registration failed',
+            id: paymentAccountId,
+            gateway: gatewayResp,
+        });
     } catch (error) {
         console.error('Error creating payment account:', error);
         res.status(500).json({ message: 'Server error', error: error.message });
