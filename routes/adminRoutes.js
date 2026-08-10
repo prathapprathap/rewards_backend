@@ -24,6 +24,7 @@ router.get('/withdrawals', adminController.getWithdrawals);
 router.put('/withdrawals/:id', adminController.updateWithdrawalStatus);
 router.put('/withdrawals/bulk-status', adminController.bulkUpdateWithdrawalStatus);
 router.get('/withdrawals/:id/gateway-status', adminController.getWithdrawalGatewayStatus);
+router.put('/withdrawals/:id/mark-paid-manual', adminController.markWithdrawalPaidManually);
 router.get('/rupiyax/wallet-balance', adminController.getRupiyaXWalletBalance);
 router.get('/stats', adminController.getDashboardStats);
 router.get('/settings', adminController.getAppSettings);

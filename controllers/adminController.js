@@ -643,34 +643,54 @@ async function payoutForWithdrawal(id) {
     }
 
     const beneficiaryName = parsed.accountName || withdrawal.name || 'Unknown';
-    const beneficiaryResp = await rupiyaXService.addBeneficiary({
-        name: beneficiaryName,
-        method,
-        detail1,
-        detail2,
-        email: withdrawal.email,
-        mobile: withdrawal.mobile,
-    });
 
-    const [beneficiaryInsert] = await db.query(
-        `INSERT INTO beneficiaries
-         (user_id, rupiyax_beneficiary_id, name, method, detail1, detail2, status, raw_response)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [withdrawal.user_id, beneficiaryResp?.data?.beneficiary_id || null, beneficiaryName, method, detail1, detail2 || null,
-         beneficiaryResp?.data?.status || (beneficiaryResp?.success ? 'registered' : 'failed'), JSON.stringify(beneficiaryResp || {})]
+    // RupiyaX rejects addBeneficiary for an account/UPI that's already registered,
+    // so reuse an existing beneficiary_id for this exact method+detail1+detail2
+    // combo instead of re-adding it on every approval.
+    const [[existingBeneficiary]] = await db.query(
+        `SELECT id, rupiyax_beneficiary_id FROM beneficiaries
+         WHERE method = ? AND detail1 = ? AND (detail2 <=> ?) AND rupiyax_beneficiary_id IS NOT NULL
+         ORDER BY created_at DESC LIMIT 1`,
+        [method, detail1, detail2 || null]
     );
 
-    if (!beneficiaryResp?.data?.beneficiary_id) {
-        const gateway = { success: false, message: beneficiaryResp?.message || 'RupiyaX beneficiary registration failed' };
-        await db.query(
-            `INSERT INTO payouts (withdrawal_id, beneficiary_id, amount, status, raw_response) VALUES (?, ?, ?, ?, ?)`,
-            [id, beneficiaryInsert.insertId, withdrawal.amount, 'failed', JSON.stringify(gateway)]
+    let beneficiaryId, beneficiaryDbId;
+    if (existingBeneficiary) {
+        beneficiaryId = existingBeneficiary.rupiyax_beneficiary_id;
+        beneficiaryDbId = existingBeneficiary.id;
+    } else {
+        const beneficiaryResp = await rupiyaXService.addBeneficiary({
+            name: beneficiaryName,
+            method,
+            detail1,
+            detail2,
+            email: withdrawal.email,
+            mobile: withdrawal.mobile,
+        });
+
+        const [beneficiaryInsert] = await db.query(
+            `INSERT INTO beneficiaries
+             (user_id, rupiyax_beneficiary_id, name, method, detail1, detail2, status, raw_response)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [withdrawal.user_id, beneficiaryResp?.data?.beneficiary_id || null, beneficiaryName, method, detail1, detail2 || null,
+             beneficiaryResp?.data?.status || (beneficiaryResp?.success ? 'registered' : 'failed'), JSON.stringify(beneficiaryResp || {})]
         );
-        return { paid: false, gateway };
+
+        if (!beneficiaryResp?.data?.beneficiary_id) {
+            const gateway = { success: false, message: beneficiaryResp?.message || 'RupiyaX beneficiary registration failed' };
+            await db.query(
+                `INSERT INTO payouts (withdrawal_id, beneficiary_id, amount, status, raw_response) VALUES (?, ?, ?, ?, ?)`,
+                [id, beneficiaryInsert.insertId, withdrawal.amount, 'failed', JSON.stringify(gateway)]
+            );
+            return { paid: false, gateway };
+        }
+
+        beneficiaryId = beneficiaryResp.data.beneficiary_id;
+        beneficiaryDbId = beneficiaryInsert.insertId;
     }
 
     const gateway = await rupiyaXService.requestPayout({
-        beneficiary_id: beneficiaryResp.data.beneficiary_id,
+        beneficiary_id: beneficiaryId,
         amount: parseFloat(withdrawal.amount),
         ref_id: `WD${withdrawal.id}`,
         comment: `Withdrawal #${withdrawal.id}`,
@@ -679,7 +699,7 @@ async function payoutForWithdrawal(id) {
     await db.query(
         `INSERT INTO payouts (withdrawal_id, beneficiary_id, rupiyax_trx_id, ref_id, amount, fee, status, raw_response)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, beneficiaryInsert.insertId, gateway?.data?.trx_id || null, gateway?.data?.ref_id || `WD${withdrawal.id}`,
+        [id, beneficiaryDbId, gateway?.data?.trx_id || null, gateway?.data?.ref_id || `WD${withdrawal.id}`,
          withdrawal.amount, gateway?.data?.fee || null, gateway?.data?.status || (gateway?.success ? 'pending' : 'failed'),
          JSON.stringify(gateway || {})]
     );
@@ -758,6 +778,34 @@ exports.handleGatewayPayoutFailed = async (withdrawalId) => {
     await db.query("UPDATE withdrawals SET status = 'FAILED' WHERE id = ? AND status NOT IN ('REJECTED', 'PAID')", [withdrawalId]);
     await db.query("UPDATE wallet_transactions SET status = 'failed' WHERE withdrawal_id = ?", [withdrawalId]);
     await refundWithdrawalToWallet(withdrawalId, 'Gateway payout failed');
+};
+
+// PUT /withdrawals/:id/mark-paid-manual — one-time escape hatch for withdrawals that
+// were approved/paid manually (e.g. before this RupiyaX integration existed) and so
+// have no payouts row, meaning the gateway can never confirm them. Admin confirms
+// the transfer was made outside RupiyaX and this just moves the record to Paid.
+exports.markWithdrawalPaidManually = async (req, res) => {
+    const { id } = req.params;
+    try {
+        const [[payout]] = await db.query('SELECT id FROM payouts WHERE withdrawal_id = ?', [id]);
+        if (payout) {
+            return res.status(400).json({ message: 'This withdrawal has a RupiyaX payout on record — use the live status refresh instead.' });
+        }
+
+        const [result] = await db.query(
+            `UPDATE withdrawals SET status = 'PAID', paid_at = NOW(), gateway_status = 'manual' WHERE id = ? AND status = 'APPROVED'`,
+            [id]
+        );
+        if (result.affectedRows === 0) {
+            return res.status(400).json({ message: 'Withdrawal not found or not in APPROVED state' });
+        }
+        await db.query("UPDATE wallet_transactions SET status = 'success' WHERE withdrawal_id = ?", [id]);
+
+        res.status(200).json({ message: 'Marked as paid manually' });
+    } catch (error) {
+        console.error('Error marking withdrawal paid manually:', error);
+        res.status(500).json({ message: 'Server error: ' + error.message });
+    }
 };
 
 // Update withdrawal status
