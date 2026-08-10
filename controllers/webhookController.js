@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const { handleGatewayPayoutFailed } = require('./adminController');
 
 // POST /api/webhook/rupiyax
 // Receives real-time payout status updates from RupiyaX.
@@ -33,7 +34,9 @@ exports.rupiyaXWebhook = async (req, res) => {
             );
             await db.query("UPDATE wallet_transactions SET status = 'success' WHERE withdrawal_id = ?", [payout.withdrawal_id]);
         } else if (data.status === 'failed') {
-            await db.query("UPDATE wallet_transactions SET status = 'failed' WHERE withdrawal_id = ?", [payout.withdrawal_id]);
+            // RupiyaX debited then reversed the transfer — money never reached the user.
+            // Refund it to their in-app wallet and mark the withdrawal FAILED.
+            await handleGatewayPayoutFailed(payout.withdrawal_id);
         }
 
         res.status(200).json({ message: 'ok' });

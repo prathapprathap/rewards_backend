@@ -189,9 +189,10 @@ const initDB = async () => {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
-    await runSafeQuery("ALTER TABLE withdrawals MODIFY COLUMN status ENUM('PENDING', 'APPROVED', 'PAID', 'REJECTED') DEFAULT 'PENDING'");
+    await runSafeQuery("ALTER TABLE withdrawals MODIFY COLUMN status ENUM('PENDING', 'APPROVED', 'PAID', 'FAILED', 'REJECTED') DEFAULT 'PENDING'");
     await runSafeQuery("ALTER TABLE withdrawals ADD COLUMN gateway_status VARCHAR(50) DEFAULT NULL");
     await runSafeQuery("ALTER TABLE withdrawals ADD COLUMN paid_at TIMESTAMP NULL DEFAULT NULL");
+    await runSafeQuery("ALTER TABLE withdrawals ADD COLUMN refunded_at TIMESTAMP NULL DEFAULT NULL");
 
     await promisePool.query(`
       CREATE TABLE IF NOT EXISTS scratched_offers (

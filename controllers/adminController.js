@@ -512,6 +512,8 @@ exports.getWithdrawalGatewayStatus = async (req, res) => {
             await db.query('UPDATE withdrawals SET gateway_status = ? WHERE id = ?', [gateway.data.status || null, id]);
             if (gateway.data.status === 'success') {
                 await db.query(`UPDATE withdrawals SET status = 'PAID', paid_at = NOW() WHERE id = ? AND status != 'REJECTED'`, [id]);
+            } else if (gateway.data.status === 'failed') {
+                await exports.handleGatewayPayoutFailed(id);
             }
         }
 
@@ -706,37 +708,57 @@ async function applyWithdrawalStatus(id, status) {
 
     // If rejected, refund the amount
     if (status === 'REJECTED') {
-        const [withdrawalRows] = await db.query(QUERIES.ADMIN.GET_WITHDRAWAL_BY_ID, [id]);
-        if (withdrawalRows.length > 0) {
-            const { user_id, amount } = withdrawalRows[0];
-            const refundAmount = parseFloat(amount);
-
-            // Fetch current balance for accurate transaction logging
-            const [userRows] = await db.query(QUERIES.USER.GET_WALLET_BALANCE, [user_id]);
-            const balanceBefore = parseFloat(userRows[0]?.wallet_balance || 0);
-            const balanceAfter = balanceBefore + refundAmount;
-
-            // Refund to main balance
-            await db.query(QUERIES.USER.UPDATE_BALANCE_ADD, [refundAmount, user_id]);
-
-            // Record Refund transaction
-            await db.query(
-                `INSERT INTO wallet_transactions
-                (user_id, transaction_type, currency_type, amount, balance_before, balance_after, description, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-                [user_id, 'refund', 'cash', refundAmount, balanceBefore, balanceAfter, `Refund: Withdrawal Request #${id} Rejected`, 'success']
-            );
-
-            // Refund to breakdown ledger
-            await db.query(
-                'UPDATE user_wallet_breakdown SET cash = cash + ? WHERE user_id = ?',
-                [refundAmount, user_id]
-            );
-        }
+        await refundWithdrawalToWallet(id, 'Rejected');
     }
 
     return { ok: true, gateway };
 }
+
+// Credit a withdrawal's amount back to the user's in-app wallet — used both when
+// admin rejects a withdrawal, and when RupiyaX reports a payout failed/reversed
+// after approval (debited then bounced back on their side, money never reached the user).
+// Guarded by refunded_at so a withdrawal is never refunded twice (e.g. duplicate
+// webhook delivery, or webhook + manual status-check racing each other).
+async function refundWithdrawalToWallet(id, reason) {
+    const [claim] = await db.query(
+        "UPDATE withdrawals SET refunded_at = NOW() WHERE id = ? AND refunded_at IS NULL", [id]
+    );
+    if (claim.affectedRows === 0) return; // already refunded
+
+    const [withdrawalRows] = await db.query(QUERIES.ADMIN.GET_WITHDRAWAL_BY_ID, [id]);
+    if (withdrawalRows.length === 0) return;
+
+    const { user_id, amount } = withdrawalRows[0];
+    const refundAmount = parseFloat(amount);
+
+    const [userRows] = await db.query(QUERIES.USER.GET_WALLET_BALANCE, [user_id]);
+    const balanceBefore = parseFloat(userRows[0]?.wallet_balance || 0);
+    const balanceAfter = balanceBefore + refundAmount;
+
+    await db.query(QUERIES.USER.UPDATE_BALANCE_ADD, [refundAmount, user_id]);
+
+    await db.query(
+        `INSERT INTO wallet_transactions
+        (user_id, transaction_type, currency_type, amount, balance_before, balance_after, description, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [user_id, 'refund', 'cash', refundAmount, balanceBefore, balanceAfter, `Refund: Withdrawal Request #${id} ${reason}`, 'success']
+    );
+
+    await db.query(
+        'UPDATE user_wallet_breakdown SET cash = cash + ? WHERE user_id = ?',
+        [refundAmount, user_id]
+    );
+}
+
+// Called when RupiyaX reports a payout as failed/reversed after it was approved
+// (money debited from the RupiyaX wallet then bounced back — never reached the user).
+// Marks the withdrawal FAILED and refunds it to the user's in-app wallet.
+// Exported so the public webhook controller can call it without duplicating this logic.
+exports.handleGatewayPayoutFailed = async (withdrawalId) => {
+    await db.query("UPDATE withdrawals SET status = 'FAILED' WHERE id = ? AND status NOT IN ('REJECTED', 'PAID')", [withdrawalId]);
+    await db.query("UPDATE wallet_transactions SET status = 'failed' WHERE withdrawal_id = ?", [withdrawalId]);
+    await refundWithdrawalToWallet(withdrawalId, 'Gateway payout failed');
+};
 
 // Update withdrawal status
 exports.updateWithdrawalStatus = async (req, res) => {
