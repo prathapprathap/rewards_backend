@@ -374,6 +374,7 @@ const initDB = async () => {
       ['referral_referred_user_bonus', '0', 'One-time bonus credited to the referred user after meeting referral conditions'],
       ['referral_min_offer_count', '1', 'Minimum approved offers the referred user must complete before referral rewards unlock'],
       ['min_withdrawal', '100', 'Minimum amount for withdrawal'],
+      ['withdrawal_daily_limit', '2', 'Maximum number of withdrawal requests a user can make per day'],
       ['withdraw_method_upi', 'On', 'Enable UPI withdrawal method (On/Off)'],
       ['withdraw_method_bank', 'On', 'Enable Bank Transfer withdrawal method (On/Off)'],
       ['coin_rate', '100', 'Conversion rate (e.g. 100 coins = ₹1)'],
