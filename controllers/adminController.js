@@ -533,6 +533,43 @@ exports.getRupiyaXWalletBalance = async (req, res) => {
     }
 };
 
+// Register a user_payment_accounts row as a RupiyaX beneficiary and store the result
+// in the beneficiaries table. Used both when admin adds a payment account, and as a
+// fallback at payout time for accounts created before this integration existed.
+async function registerRupiyaXBeneficiary(paymentAccountId) {
+    const [[account]] = await db.query('SELECT * FROM user_payment_accounts WHERE id = ?', [paymentAccountId]);
+    if (!account) return { success: false, message: 'Payment account not found' };
+
+    const [[user]] = await db.query('SELECT name, email FROM users WHERE id = ?', [account.user_id]);
+    const method = account.account_type === 'upi' ? 'upi' : 'imps';
+    const detail1 = account.account_type === 'upi' ? account.upi_id : account.account_number;
+    const detail2 = account.account_type === 'upi' ? undefined : account.ifsc_code;
+    const beneficiaryName = account.account_holder || user?.name || 'Unknown';
+
+    const gatewayResp = await rupiyaXService.addBeneficiary({
+        name: beneficiaryName,
+        method,
+        detail1,
+        detail2,
+        email: user?.email,
+    });
+
+    const gatewayBeneficiaryId = gatewayResp?.data?.beneficiary_id || null;
+    await db.query(
+        `INSERT INTO beneficiaries
+         (payment_account_id, user_id, rupiyax_beneficiary_id, name, method, detail1, detail2, status, raw_response)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [paymentAccountId, account.user_id, gatewayBeneficiaryId, beneficiaryName, method, detail1, detail2 || null,
+         gatewayResp?.data?.status || (gatewayResp?.success ? 'registered' : 'failed'), JSON.stringify(gatewayResp || {})]
+    );
+
+    if (gatewayBeneficiaryId) {
+        await db.query('UPDATE user_payment_accounts SET rupiyax_beneficiary_id = ? WHERE id = ?', [gatewayBeneficiaryId, paymentAccountId]);
+    }
+
+    return gatewayResp;
+}
+
 // Trigger a RupiyaX payout for a withdrawal being approved, and record the response.
 // Returns { paid: boolean, gateway: <raw response> }.
 async function payoutForWithdrawal(id) {
@@ -541,7 +578,7 @@ async function payoutForWithdrawal(id) {
     );
     if (!withdrawal) return { paid: false, gateway: { success: false, message: 'Withdrawal not found' } };
 
-    const [[beneficiary]] = await db.query(
+    let [[beneficiary]] = await db.query(
         `SELECT b.id, b.rupiyax_beneficiary_id FROM beneficiaries b
          JOIN user_payment_accounts upa ON upa.id = b.payment_account_id
          WHERE upa.user_id = ? ORDER BY upa.is_primary DESC, b.created_at DESC LIMIT 1`,
@@ -549,7 +586,23 @@ async function payoutForWithdrawal(id) {
     );
 
     if (!beneficiary?.rupiyax_beneficiary_id) {
-        const gateway = { success: false, message: 'No registered RupiyaX beneficiary for this user' };
+        // No beneficiary registered yet (account predates this integration) — auto-register now.
+        const [[account]] = await db.query(
+            'SELECT id FROM user_payment_accounts WHERE user_id = ? ORDER BY is_primary DESC, created_at DESC LIMIT 1',
+            [withdrawal.user_id]
+        );
+        if (account) {
+            await registerRupiyaXBeneficiary(account.id);
+            [[beneficiary]] = await db.query(
+                `SELECT b.id, b.rupiyax_beneficiary_id FROM beneficiaries b
+                 WHERE b.payment_account_id = ? ORDER BY b.created_at DESC LIMIT 1`,
+                [account.id]
+            );
+        }
+    }
+
+    if (!beneficiary?.rupiyax_beneficiary_id) {
+        const gateway = { success: false, message: 'No payment account / RupiyaX beneficiary could be registered for this user' };
         await db.query(
             `INSERT INTO payouts (withdrawal_id, beneficiary_id, amount, status, raw_response)
              VALUES (?, ?, ?, ?, ?)`,
@@ -1262,33 +1315,7 @@ exports.createPaymentAccount = async (req, res) => {
         );
         const paymentAccountId = result.insertId;
 
-        // Register this account as a beneficiary with RupiyaX (admin-triggered)
-        const [[user]] = await db.query('SELECT name, email FROM users WHERE id = ?', [user_id]);
-        const method = account_type === 'upi' ? 'upi' : 'imps';
-        const detail1 = account_type === 'upi' ? upi_id : account_number;
-        const detail2 = account_type === 'upi' ? undefined : ifsc_code;
-        const beneficiaryName = account_holder || user?.name || 'Unknown';
-
-        const gatewayResp = await rupiyaXService.addBeneficiary({
-            name: beneficiaryName,
-            method,
-            detail1,
-            detail2,
-            email: user?.email,
-        });
-
-        const gatewayBeneficiaryId = gatewayResp?.data?.beneficiary_id || null;
-        await db.query(
-            `INSERT INTO beneficiaries
-             (payment_account_id, user_id, rupiyax_beneficiary_id, name, method, detail1, detail2, status, raw_response)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [paymentAccountId, user_id, gatewayBeneficiaryId, beneficiaryName, method, detail1, detail2 || null,
-             gatewayResp?.data?.status || (gatewayResp?.success ? 'registered' : 'failed'), JSON.stringify(gatewayResp || {})]
-        );
-
-        if (gatewayBeneficiaryId) {
-            await db.query('UPDATE user_payment_accounts SET rupiyax_beneficiary_id = ? WHERE id = ?', [gatewayBeneficiaryId, paymentAccountId]);
-        }
+        const gatewayResp = await registerRupiyaXBeneficiary(paymentAccountId);
 
         res.status(201).json({
             message: gatewayResp?.success ? 'Payment account added and beneficiary registered' : 'Payment account added, but RupiyaX beneficiary registration failed',
