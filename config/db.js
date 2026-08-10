@@ -284,7 +284,7 @@ const initDB = async () => {
     await promisePool.query(`
       CREATE TABLE IF NOT EXISTS beneficiaries (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        payment_account_id INT NOT NULL,
+        payment_account_id INT DEFAULT NULL,
         user_id INT NOT NULL,
         rupiyax_beneficiary_id VARCHAR(100),
         name VARCHAR(255) NOT NULL,
@@ -298,6 +298,7 @@ const initDB = async () => {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
+    await runSafeQuery("ALTER TABLE beneficiaries MODIFY COLUMN payment_account_id INT DEFAULT NULL");
 
     await promisePool.query(`
       CREATE TABLE IF NOT EXISTS payouts (
