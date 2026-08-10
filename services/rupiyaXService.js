@@ -32,13 +32,29 @@ async function callRupiyaX(path, { method = 'GET', body } = {}) {
     return json || { success: false, message: `RupiyaX returned non-JSON response (${res.status})`, data: null };
 }
 
+// RupiyaX's API expects every field as a JSON string — a JS value that happens to be
+// a number (e.g. an all-digit account number read back from a numeric DB column) gets
+// serialized unquoted by JSON.stringify, which RupiyaX's Go backend then rejects with
+// "cannot unmarshal number into Go value of type RecipientJSON". Force strings here.
+const asString = (v) => (v === undefined || v === null || v === '') ? undefined : String(v);
+
 // Register a beneficiary with RupiyaX. method: 'upi' or 'imps'.
 // For 'upi', detail1 is the UPI VPA. For 'imps', detail1 is account number and detail2 is IFSC.
+// Note: this endpoint was found to leave some accounts in a broken state that later fails
+// payout with a RupiyaX-side JSON unmarshal error — the withdrawal payout path below no
+// longer uses this, but it's kept for the admin "add payment account" flow.
 async function addBeneficiary({ name, method, detail1, detail2, email, mobile }) {
     try {
         const json = await callRupiyaX('/api/v1/beneficiaries/add', {
             method: 'POST',
-            body: { name, method, detail1, detail2, email, mobile },
+            body: {
+                name: asString(name),
+                method: asString(method),
+                detail1: asString(detail1),
+                detail2: asString(detail2),
+                email: asString(email),
+                mobile: asString(mobile),
+            },
         });
 
         if (!json.success) {
@@ -51,12 +67,27 @@ async function addBeneficiary({ name, method, detail1, detail2, email, mobile })
     }
 }
 
-// Trigger a payout to a previously registered beneficiary_id.
-async function requestPayout({ beneficiary_id, amount, ref_id, comment }) {
+// Trigger a payout directly to recipient details — no pre-registered beneficiary.
+// The public /beneficiaries/add + beneficiary_id flow was found to reliably fail with
+// a RupiyaX-side error ("cannot unmarshal number into Go value of type RecipientJSON")
+// for certain accounts (confirmed via raw curl, independent of our code). Direct mode,
+// with method sent uppercase and amount as a string — matching the payload RupiyaX's
+// own dashboard uses — was confirmed working, so payouts go straight through this path.
+// method: 'IMPS' or 'UPI'. For IMPS pass acc_no + ifsc; for UPI pass upi.
+async function requestPayout({ amount, ref_id, comment, method, name, upi, acc_no, ifsc }) {
     try {
         const json = await callRupiyaX('/api/v1/payouts/request', {
             method: 'POST',
-            body: { beneficiary_id, amount, ref_id, comment },
+            body: {
+                amount: asString(amount),
+                ref_id: asString(ref_id),
+                comment: comment ?? '',
+                method: asString(method)?.toUpperCase(),
+                name: asString(name),
+                upi: asString(upi) ?? '',
+                acc_no: asString(acc_no) ?? '',
+                ifsc: asString(ifsc) ?? '',
+            },
         });
 
         if (!json.success) {

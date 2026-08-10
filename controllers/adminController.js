@@ -616,9 +616,11 @@ function parseWithdrawalDetails(method = '', details = '') {
     };
 }
 
-// Register a RupiyaX beneficiary from a withdrawal's own method/details, then
-// request the payout. Each withdrawal carries its own account details, so a
-// fresh beneficiary is registered per-withdrawal rather than reused.
+// Request a RupiyaX payout directly to a withdrawal's own method/details — no
+// beneficiary pre-registration step. The addBeneficiary + beneficiary_id flow was
+// found to reliably fail for some accounts with a RupiyaX-side bug (confirmed via
+// raw curl, independent of our request); direct mode with recipient fields inline
+// was confirmed working. Each withdrawal carries its own account details.
 // Returns { paid: boolean, gateway: <raw response> }.
 async function payoutForWithdrawal(id) {
     const [[withdrawal]] = await db.query(
@@ -629,12 +631,13 @@ async function payoutForWithdrawal(id) {
     if (!withdrawal) return { paid: false, gateway: { success: false, message: 'Withdrawal not found' } };
 
     const parsed = parseWithdrawalDetails(withdrawal.method, withdrawal.details);
-    const method = parsed.type === 'upi' ? 'upi' : 'imps';
-    const detail1 = parsed.type === 'upi' ? parsed.value : parsed.accountNumber;
-    const detail2 = parsed.type === 'upi' ? undefined : parsed.ifsc;
+    const method = parsed.type === 'upi' ? 'UPI' : 'IMPS';
+    const upi = parsed.type === 'upi' ? parsed.value : undefined;
+    const accNo = parsed.type === 'upi' ? undefined : parsed.accountNumber;
+    const ifsc = parsed.type === 'upi' ? undefined : parsed.ifsc;
 
-    if (!detail1 || (method === 'imps' && !detail2)) {
-        const gateway = { success: false, message: 'Withdrawal details could not be parsed into a valid UPI/bank beneficiary' };
+    if ((method === 'UPI' && !upi) || (method === 'IMPS' && (!accNo || !ifsc))) {
+        const gateway = { success: false, message: 'Withdrawal details could not be parsed into a valid UPI/bank recipient' };
         await db.query(
             `INSERT INTO payouts (withdrawal_id, amount, status, raw_response) VALUES (?, ?, ?, ?)`,
             [id, withdrawal.amount, 'failed', JSON.stringify(gateway)]
@@ -642,64 +645,23 @@ async function payoutForWithdrawal(id) {
         return { paid: false, gateway };
     }
 
-    const beneficiaryName = parsed.accountName || withdrawal.name || 'Unknown';
-
-    // RupiyaX rejects addBeneficiary for an account/UPI that's already registered,
-    // so reuse an existing beneficiary_id for this exact method+detail1+detail2
-    // combo instead of re-adding it on every approval.
-    const [[existingBeneficiary]] = await db.query(
-        `SELECT id, rupiyax_beneficiary_id FROM beneficiaries
-         WHERE method = ? AND detail1 = ? AND (detail2 <=> ?) AND rupiyax_beneficiary_id IS NOT NULL
-         ORDER BY created_at DESC LIMIT 1`,
-        [method, detail1, detail2 || null]
-    );
-
-    let beneficiaryId, beneficiaryDbId;
-    if (existingBeneficiary) {
-        beneficiaryId = existingBeneficiary.rupiyax_beneficiary_id;
-        beneficiaryDbId = existingBeneficiary.id;
-    } else {
-        const beneficiaryResp = await rupiyaXService.addBeneficiary({
-            name: beneficiaryName,
-            method,
-            detail1,
-            detail2,
-            email: withdrawal.email,
-            mobile: withdrawal.mobile,
-        });
-
-        const [beneficiaryInsert] = await db.query(
-            `INSERT INTO beneficiaries
-             (user_id, rupiyax_beneficiary_id, name, method, detail1, detail2, status, raw_response)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-            [withdrawal.user_id, beneficiaryResp?.data?.beneficiary_id || null, beneficiaryName, method, detail1, detail2 || null,
-             beneficiaryResp?.data?.status || (beneficiaryResp?.success ? 'registered' : 'failed'), JSON.stringify(beneficiaryResp || {})]
-        );
-
-        if (!beneficiaryResp?.data?.beneficiary_id) {
-            const gateway = { success: false, message: beneficiaryResp?.message || 'RupiyaX beneficiary registration failed' };
-            await db.query(
-                `INSERT INTO payouts (withdrawal_id, beneficiary_id, amount, status, raw_response) VALUES (?, ?, ?, ?, ?)`,
-                [id, beneficiaryInsert.insertId, withdrawal.amount, 'failed', JSON.stringify(gateway)]
-            );
-            return { paid: false, gateway };
-        }
-
-        beneficiaryId = beneficiaryResp.data.beneficiary_id;
-        beneficiaryDbId = beneficiaryInsert.insertId;
-    }
+    const recipientName = parsed.accountName || withdrawal.name || 'Unknown';
 
     const gateway = await rupiyaXService.requestPayout({
-        beneficiary_id: beneficiaryId,
-        amount: parseFloat(withdrawal.amount),
+        amount: withdrawal.amount,
         ref_id: `WD${withdrawal.id}`,
-        comment: `Withdrawal #${withdrawal.id}`,
+        comment: '',
+        method,
+        name: recipientName,
+        upi,
+        acc_no: accNo,
+        ifsc,
     });
 
     await db.query(
-        `INSERT INTO payouts (withdrawal_id, beneficiary_id, rupiyax_trx_id, ref_id, amount, fee, status, raw_response)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, beneficiaryDbId, gateway?.data?.trx_id || null, gateway?.data?.ref_id || `WD${withdrawal.id}`,
+        `INSERT INTO payouts (withdrawal_id, rupiyax_trx_id, ref_id, amount, fee, status, raw_response)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [id, gateway?.data?.trxId || gateway?.data?.trx_id || null, gateway?.data?.refId || gateway?.data?.ref_id || `WD${withdrawal.id}`,
          withdrawal.amount, gateway?.data?.fee || null, gateway?.data?.status || (gateway?.success ? 'pending' : 'failed'),
          JSON.stringify(gateway || {})]
     );
