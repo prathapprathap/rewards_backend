@@ -79,10 +79,10 @@ async function requestPayout({ amount, ref_id, comment, method, name, upi, acc_n
         const json = await callRupiyaX('/api/v1/payouts/request', {
             method: 'POST',
             body: {
-                amount: asString(amount),
+                amount: Number(amount),
                 ref_id: asString(ref_id),
                 comment: comment ?? '',
-                method: asString(method)?.toUpperCase(),
+                method: asString(method)?.toLowerCase(),
                 name: asString(name),
                 upi: asString(upi) ?? '',
                 acc_no: asString(acc_no) ?? '',
