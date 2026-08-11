@@ -562,7 +562,7 @@ async function registerRupiyaXBeneficiary(paymentAccountId) {
          (payment_account_id, user_id, rupiyax_beneficiary_id, name, method, detail1, detail2, status, raw_response)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [paymentAccountId, account.user_id, gatewayBeneficiaryId, beneficiaryName, method, detail1, detail2 || null,
-         gatewayResp?.data?.status || (gatewayResp?.success ? 'registered' : 'failed'), JSON.stringify(gatewayResp || {})]
+            gatewayResp?.data?.status || (gatewayResp?.success ? 'registered' : 'failed'), JSON.stringify(gatewayResp || {})]
     );
 
     if (gatewayBeneficiaryId) {
@@ -631,12 +631,12 @@ async function payoutForWithdrawal(id) {
     if (!withdrawal) return { paid: false, gateway: { success: false, message: 'Withdrawal not found' } };
 
     const parsed = parseWithdrawalDetails(withdrawal.method, withdrawal.details);
-    const method = parsed.type === 'upi' ? 'UPI' : 'IMPS';
+    const method = parsed.type === 'upi' ? 'upi' : 'imps';   // ← lowercase, per docs
     const upi = parsed.type === 'upi' ? parsed.value : undefined;
     const accNo = parsed.type === 'upi' ? undefined : parsed.accountNumber;
     const ifsc = parsed.type === 'upi' ? undefined : parsed.ifsc;
 
-    if ((method === 'UPI' && !upi) || (method === 'IMPS' && (!accNo || !ifsc))) {
+    if ((method === 'upi' && !upi) || (method === 'imps' && (!accNo || !ifsc))) {
         const gateway = { success: false, message: 'Withdrawal details could not be parsed into a valid UPI/bank recipient' };
         await db.query(
             `INSERT INTO payouts (withdrawal_id, amount, status, raw_response) VALUES (?, ?, ?, ?)`,
@@ -648,7 +648,7 @@ async function payoutForWithdrawal(id) {
     const recipientName = parsed.accountName || withdrawal.name || 'Unknown';
 
     const gateway = await rupiyaXService.requestPayout({
-        amount: withdrawal.amount,
+        amount: Number(withdrawal.amount),   // ← docs want number, mysql2 gives string for DECIMAL
         ref_id: `WD${withdrawal.id}`,
         comment: '',
         method,
@@ -662,8 +662,8 @@ async function payoutForWithdrawal(id) {
         `INSERT INTO payouts (withdrawal_id, rupiyax_trx_id, ref_id, amount, fee, status, raw_response)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [id, gateway?.data?.trxId || gateway?.data?.trx_id || null, gateway?.data?.refId || gateway?.data?.ref_id || `WD${withdrawal.id}`,
-         withdrawal.amount, gateway?.data?.fee || null, gateway?.data?.status || (gateway?.success ? 'pending' : 'failed'),
-         JSON.stringify(gateway || {})]
+            withdrawal.amount, gateway?.data?.fee || null, gateway?.data?.status || (gateway?.success ? 'pending' : 'failed'),
+            JSON.stringify(gateway || {})]
     );
 
     await db.query('UPDATE withdrawals SET gateway_status = ? WHERE id = ?', [gateway?.data?.status || (gateway?.success ? 'pending' : 'failed'), id]);
@@ -1130,17 +1130,17 @@ exports.updateUser = async (req, res) => {
         const fields = [];
         const values = [];
 
-        if (name !== undefined)              { fields.push('name = ?');              values.push(name); }
-        if (email !== undefined)             { fields.push('email = ?');             values.push(email); }
-        if (upi_id !== undefined)            { fields.push('upi_id = ?');            values.push(upi_id); }
-        if (telegram_id !== undefined)       { fields.push('telegram_id = ?');       values.push(telegram_id); }
-        if (device_id !== undefined)         { fields.push('device_id = ?');         values.push(device_id); }
-        if (referral_code !== undefined)     { fields.push('referral_code = ?');     values.push(referral_code); }
-        if (referred_by !== undefined)       { fields.push('referred_by = ?');       values.push(referred_by); }
-        if (wallet_balance !== undefined)    { fields.push('wallet_balance = ?');    values.push(parseFloat(wallet_balance)); }
-        if (total_earnings !== undefined)    { fields.push('total_earnings = ?');    values.push(parseFloat(total_earnings)); }
+        if (name !== undefined) { fields.push('name = ?'); values.push(name); }
+        if (email !== undefined) { fields.push('email = ?'); values.push(email); }
+        if (upi_id !== undefined) { fields.push('upi_id = ?'); values.push(upi_id); }
+        if (telegram_id !== undefined) { fields.push('telegram_id = ?'); values.push(telegram_id); }
+        if (device_id !== undefined) { fields.push('device_id = ?'); values.push(device_id); }
+        if (referral_code !== undefined) { fields.push('referral_code = ?'); values.push(referral_code); }
+        if (referred_by !== undefined) { fields.push('referred_by = ?'); values.push(referred_by); }
+        if (wallet_balance !== undefined) { fields.push('wallet_balance = ?'); values.push(parseFloat(wallet_balance)); }
+        if (total_earnings !== undefined) { fields.push('total_earnings = ?'); values.push(parseFloat(total_earnings)); }
         if (referral_earnings !== undefined) { fields.push('referral_earnings = ?'); values.push(parseFloat(referral_earnings)); }
-        if (is_blocked !== undefined)        { fields.push('is_blocked = ?');       values.push(is_blocked ? 1 : 0); }
+        if (is_blocked !== undefined) { fields.push('is_blocked = ?'); values.push(is_blocked ? 1 : 0); }
 
         if (fields.length === 0) {
             return res.status(400).json({ message: 'No fields to update' });
@@ -1399,7 +1399,7 @@ exports.createPaymentAccount = async (req, res) => {
              (user_id, account_type, upi_id, bank_name, account_holder, account_number, ifsc_code, is_primary)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
             [user_id, account_type, upi_id || null, bank_name || null,
-             account_holder || null, account_number || null, ifsc_code || null, is_primary ? 1 : 0]
+                account_holder || null, account_number || null, ifsc_code || null, is_primary ? 1 : 0]
         );
         const paymentAccountId = result.insertId;
 
@@ -1442,10 +1442,10 @@ exports.updatePaymentAccount = async (req, res) => {
                verified        = COALESCE(?, verified)
              WHERE id = ?`,
             [account_type ?? null, upi_id ?? null, bank_name ?? null,
-             account_holder ?? null, account_number ?? null, ifsc_code ?? null,
-             is_primary !== undefined ? (is_primary ? 1 : 0) : null,
-             verified   !== undefined ? (verified   ? 1 : 0) : null,
-             accountId]
+            account_holder ?? null, account_number ?? null, ifsc_code ?? null,
+            is_primary !== undefined ? (is_primary ? 1 : 0) : null,
+            verified !== undefined ? (verified ? 1 : 0) : null,
+                accountId]
         );
         res.status(200).json({ message: 'Payment account updated' });
     } catch (error) {
