@@ -647,31 +647,16 @@ async function payoutForWithdrawal(id) {
 
     const recipientName = parsed.accountName || withdrawal.name || 'Unknown';
 
-   async function requestPayout({ amount, ref_id, comment, method, name, upi, acc_no, ifsc }) {
-    try {
-        const json = await callRupiyaX('/api/v1/payouts/request', {
-            method: 'POST',
-            body: {
-                amount: Number(amount),
-                ref_id: asString(ref_id),
-                comment: comment ?? '',
-                method: asString(method)?.toLowerCase(),
-                name: asString(name),
-                upi: asString(upi) ?? '',
-                acc_no: asString(acc_no) ?? '',
-                ifsc: asString(ifsc) ?? '',
-            },
-        });
-
-        if (!json.success) {
-            console.error('RupiyaX requestPayout failed:', json.message);
-        }
-        return json;
-    } catch (err) {
-        console.error('RupiyaX requestPayout error:', err.message);
-        return { success: false, message: err.message, data: null };
-    }
-}
+    const gateway = await rupiyaXService.requestPayout({
+        amount: Number(withdrawal.amount),
+        ref_id: `WD${withdrawal.id}`,
+        comment: '',
+        method,
+        name: recipientName,
+        upi,
+        acc_no: accNo,
+        ifsc,
+    });
 
     await db.query(
         `INSERT INTO payouts (withdrawal_id, rupiyax_trx_id, ref_id, amount, fee, status, raw_response)
