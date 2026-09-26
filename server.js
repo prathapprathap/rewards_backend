@@ -1,3 +1,5 @@
+// Load first so every console.* call (including DB startup) goes to logs/
+const { requestLogger } = require('./utils/logger');
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
@@ -24,6 +26,7 @@ app.set('trust proxy', true);
 app.use(cors());
 app.use(bodyParser.json({ limit: '15mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '15mb' }));
+app.use(requestLogger);
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Routes

@@ -3,6 +3,7 @@ const router = express.Router();
 const adminController = require('../controllers/adminController');
 const notificationController = require('../controllers/notificationController');
 const submissionController = require('../controllers/submissionController');
+const logController = require('../controllers/logController');
 const adminAuth = require('../middleware/auth');
 
 // Public: login issues a JWT.
@@ -10,6 +11,13 @@ router.post('/login', adminController.login);
 
 // Everything below this line requires a valid admin JWT.
 router.use(adminAuth);
+
+// Server log files (backend/logs)
+router.get('/logs', logController.listLogs);
+router.delete('/logs', logController.deleteAllLogs);
+router.get('/logs/:name', logController.readLog);
+router.get('/logs/:name/download', logController.downloadLog);
+router.delete('/logs/:name', logController.deleteLog);
 
 router.get('/users', adminController.getAllUsers);
 router.get('/tasks', adminController.getAllTasks);
