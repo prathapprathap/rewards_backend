@@ -14,8 +14,13 @@ const SECRET_KEYS = /pass(word)?|token|secret|authorization|otp|api_?key/i;
 let currentDate = null;
 let stream = null;
 
+// File names follow the India calendar day (a new file at IST midnight), while
+// each line's timestamp stays UTC ISO so it's unambiguous; the admin viewer
+// converts it to local time.
+const FILE_TZ = 'Asia/Kolkata';
+
 function getStream() {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: FILE_TZ }); // YYYY-MM-DD
     if (today !== currentDate) {
         if (stream) stream.end();
         currentDate = today;
