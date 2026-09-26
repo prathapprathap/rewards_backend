@@ -97,8 +97,7 @@ exports.loginWithGoogle = async (req, res) => {
             return res.status(200).json({ message: 'Login successful', user });
         } else {
             // ✅ CHECK: Prevent new signup if device already has an account.
-            // hardware_id can't be reset by clearing app data, so check it
-            // first; the client's UUID-retry below can't get past this.
+            // hardware_id can't be reset by clearing app data, so check it first.
             if (hardware_id) {
                 const [hardwareCheck] = await db.query(
                     'SELECT id, email FROM users WHERE hardware_id = ? LIMIT 1',
@@ -114,9 +113,18 @@ exports.loginWithGoogle = async (req, res) => {
                 }
             }
 
+            // device_id (legacy fingerprint) is shared by every phone of the same
+            // model+firmware. When the app sends hardware_id, a match on an
+            // account that HAS a (different) hardware_id is just another phone of
+            // that model, so it's allowed. A match on an account with no
+            // hardware_id yet (hasn't updated the app) can't be told apart from
+            // this same phone, so it stays blocked until that user logs in once
+            // with the new app. Old apps (no hardware_id) keep the plain check.
             if (device_id) {
                 const [deviceCheck] = await db.query(
-                    'SELECT id, email FROM users WHERE device_id = ?',
+                    hardware_id
+                        ? 'SELECT id, email FROM users WHERE device_id = ? AND hardware_id IS NULL'
+                        : 'SELECT id, email FROM users WHERE device_id = ?',
                     [device_id]
                 );
 
