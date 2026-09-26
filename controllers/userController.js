@@ -3,7 +3,7 @@ const QUERIES = require('../constants/queries');
 const { processReferralCommission } = require('./referralController');
 
 exports.loginWithGoogle = async (req, res) => {
-    const { google_id, email, name, profile_pic, device_id, referral_code } = req.body;
+    const { google_id, email, name, profile_pic, device_id, hardware_id, referral_code } = req.body;
 
     if (!google_id || !email) {
         return res.status(400).json({ message: 'Google ID and Email are required' });
@@ -53,16 +53,32 @@ exports.loginWithGoogle = async (req, res) => {
                 user.referral_code = newReferralCode;
             }
 
-            // Device restriction logic
-            if (device_id) {
-                if (!user.device_id) {
-                    await db.query(QUERIES.USER.UPDATE_DEVICE_ID, [device_id, user.id]);
-                    user.device_id = device_id;
-                } else if (user.device_id !== device_id) {
+            // Device restriction logic. hardware_id (ANDROID_ID) survives
+            // clear-data/reinstall, so once stored it is the authority;
+            // device_id is only used for accounts that don't have one yet.
+            if (hardware_id && user.hardware_id) {
+                if (user.hardware_id !== hardware_id) {
                     return res.status(403).json({
                         message: 'This account is already registered on another device.',
                         error_code: 'DEVICE_LOCKED'
                     });
+                }
+            } else {
+                if (device_id) {
+                    if (!user.device_id) {
+                        await db.query(QUERIES.USER.UPDATE_DEVICE_ID, [device_id, user.id]);
+                        user.device_id = device_id;
+                    } else if (user.device_id !== device_id) {
+                        return res.status(403).json({
+                            message: 'This account is already registered on another device.',
+                            error_code: 'DEVICE_LOCKED'
+                        });
+                    }
+                }
+                // Backfill for accounts created before hardware_id existed
+                if (hardware_id) {
+                    await db.query('UPDATE users SET hardware_id = ? WHERE id = ?', [hardware_id, user.id]);
+                    user.hardware_id = hardware_id;
                 }
             }
 
@@ -80,7 +96,24 @@ exports.loginWithGoogle = async (req, res) => {
 
             return res.status(200).json({ message: 'Login successful', user });
         } else {
-            // ✅ CHECK: Prevent new signup if device already has an account
+            // ✅ CHECK: Prevent new signup if device already has an account.
+            // hardware_id can't be reset by clearing app data, so check it
+            // first; the client's UUID-retry below can't get past this.
+            if (hardware_id) {
+                const [hardwareCheck] = await db.query(
+                    'SELECT id, email FROM users WHERE hardware_id = ? LIMIT 1',
+                    [hardware_id]
+                );
+
+                if (hardwareCheck.length > 0) {
+                    return res.status(403).json({
+                        message: `This device is already registered with ${hardwareCheck[0].email}. One account per device only.`,
+                        error_code: 'DEVICE_ALREADY_REGISTERED',
+                        existing_email: hardwareCheck[0].email
+                    });
+                }
+            }
+
             if (device_id) {
                 const [deviceCheck] = await db.query(
                     'SELECT id, email FROM users WHERE device_id = ?',
@@ -98,8 +131,8 @@ exports.loginWithGoogle = async (req, res) => {
 
             // User does not exist, create new user
             const [result] = await db.query(
-                'INSERT INTO users (google_id, email, name, profile_pic, device_id, last_login_at) VALUES (?, ?, ?, ?, ?, NOW())',
-                [google_id, email, name, profile_pic, device_id]
+                'INSERT INTO users (google_id, email, name, profile_pic, device_id, hardware_id, last_login_at) VALUES (?, ?, ?, ?, ?, ?, NOW())',
+                [google_id, email, name, profile_pic, device_id, hardware_id || null]
             );
 
             const userId = result.insertId;

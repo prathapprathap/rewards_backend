@@ -63,6 +63,8 @@ const initDB = async () => {
       "ALTER TABLE users ADD COLUMN is_blocked TINYINT(1) DEFAULT 0",
       "ALTER TABLE users ADD COLUMN fcm_token VARCHAR(512) DEFAULT NULL",
       "ALTER TABLE users ADD COLUMN referral_count_adjustment INT DEFAULT 0",
+      "ALTER TABLE users ADD COLUMN hardware_id VARCHAR(255) DEFAULT NULL",
+      "ALTER TABLE users ADD INDEX idx_users_hardware_id (hardware_id)",
     ];
 
     for (const sql of userMigrations) {
