@@ -18,14 +18,16 @@ function ipNetworkPrefix(ip) {
 // A device-fingerprint collision (hardware_id or legacy device_id) is only
 // trustworthy when corroborated by IP history, since some phone
 // models/firmwares issue identical fingerprints to different physical units.
-// No history yet, or a matching network prefix, keeps the block; a clean
-// mismatch against existing history means it's likely a different device.
+// A matching network prefix keeps the block. With no history yet (account
+// hasn't logged in since IP tracking started) there's no evidence it's really
+// the same device, so we let the new signup through rather than block forever
+// on an account that may never log in again to clear itself.
 async function isCorroboratedByIpHistory(existingUserId, clientIp) {
     const [knownIps] = await db.query(QUERIES.USER.GET_LOGIN_IPS, [existingUserId]);
     const hasIpHistory = knownIps.length > 0;
     const clientPrefix = ipNetworkPrefix(clientIp);
     const ipSeenBefore = knownIps.some(row => ipNetworkPrefix(row.ip_address) === clientPrefix);
-    return { shouldBlock: !hasIpHistory || ipSeenBefore, hasIpHistory, ipSeenBefore };
+    return { shouldBlock: hasIpHistory && ipSeenBefore, hasIpHistory, ipSeenBefore };
 }
 
 exports.loginWithGoogle = async (req, res) => {
