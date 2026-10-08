@@ -2,6 +2,19 @@ const db = require('../config/db');
 const QUERIES = require('../constants/queries');
 const { processReferralCommission } = require('./referralController');
 
+// Reduces an IPv4 address to its /24 network prefix so minor mobile-carrier
+// IP rotation within the same tower/pool still counts as "the same network".
+// Non-IPv4 addresses (IPv6, malformed) are returned as-is for an exact match.
+function ipNetworkPrefix(ip) {
+    if (!ip) return ip;
+    const v4 = ip.startsWith('::ffff:') ? ip.slice(7) : ip;
+    const parts = v4.split('.');
+    if (parts.length === 4) {
+        return parts.slice(0, 3).join('.');
+    }
+    return ip;
+}
+
 exports.loginWithGoogle = async (req, res) => {
     const { google_id, email, name, profile_pic, device_id, hardware_id, referral_code } = req.body;
 
@@ -9,12 +22,14 @@ exports.loginWithGoogle = async (req, res) => {
         return res.status(400).json({ message: 'Google ID and Email are required' });
     }
 
+    const clientIp = req.ip;
+    console.log(`[google-login] email=${email} google_id=${google_id} device_id=${device_id} hardware_id=${hardware_id} ip=${clientIp}`);
+
     let finalReferralCode = referral_code;
 
     try {
         // --- AUTO-DETECT REFERRAL (IP + UA Attribution) ---
         if (!finalReferralCode) {
-            const clientIp = req.ip;
             const userAgent = req.headers['user-agent'] || 'unknown';
 
             // 1. Try to find recent attribution for this IP
@@ -58,6 +73,7 @@ exports.loginWithGoogle = async (req, res) => {
             // device_id is only used for accounts that don't have one yet.
             if (hardware_id && user.hardware_id) {
                 if (user.hardware_id !== hardware_id) {
+                    console.log(`[google-login] BLOCKED (DEVICE_LOCKED) on hardware_id mismatch email=${email} stored_hardware_id=${user.hardware_id} incoming_hardware_id=${hardware_id}`);
                     return res.status(403).json({
                         message: 'This account is already registered on another device.',
                         error_code: 'DEVICE_LOCKED'
@@ -69,6 +85,7 @@ exports.loginWithGoogle = async (req, res) => {
                         await db.query(QUERIES.USER.UPDATE_DEVICE_ID, [device_id, user.id]);
                         user.device_id = device_id;
                     } else if (user.device_id !== device_id) {
+                        console.log(`[google-login] BLOCKED (DEVICE_LOCKED) on device_id mismatch email=${email} stored_device_id=${user.device_id} incoming_device_id=${device_id}`);
                         return res.status(403).json({
                             message: 'This account is already registered on another device.',
                             error_code: 'DEVICE_LOCKED'
@@ -94,10 +111,19 @@ exports.loginWithGoogle = async (req, res) => {
             await db.query('UPDATE users SET last_login_at = NOW() WHERE id = ?', [user.id]);
             user.last_login_at = new Date();
 
+            if (clientIp) {
+                await db.query(QUERIES.USER.RECORD_LOGIN_IP, [user.id, clientIp]);
+            }
+
             return res.status(200).json({ message: 'Login successful', user });
         } else {
             // ✅ CHECK: Prevent new signup if device already has an account.
             // hardware_id can't be reset by clearing app data, so check it first.
+            // Some phone models/firmwares are known to issue the same hardware_id
+            // (ANDROID_ID) to different physical units, which falsely blocks a
+            // genuinely different person. If the existing account has IP history
+            // and none of it matches this request's IP, treat it as a different
+            // device and let the signup through instead of hard-blocking.
             if (hardware_id) {
                 const [hardwareCheck] = await db.query(
                     'SELECT id, email FROM users WHERE hardware_id = ? LIMIT 1',
@@ -105,11 +131,22 @@ exports.loginWithGoogle = async (req, res) => {
                 );
 
                 if (hardwareCheck.length > 0) {
-                    return res.status(403).json({
-                        message: `This device is already registered with ${hardwareCheck[0].email}. One account per device only.`,
-                        error_code: 'DEVICE_ALREADY_REGISTERED',
-                        existing_email: hardwareCheck[0].email
-                    });
+                    const existingUserId = hardwareCheck[0].id;
+                    const [knownIps] = await db.query(QUERIES.USER.GET_LOGIN_IPS, [existingUserId]);
+                    const clientPrefix = ipNetworkPrefix(clientIp);
+                    const ipSeenBefore = knownIps.some(row => ipNetworkPrefix(row.ip_address) === clientPrefix);
+                    const hasIpHistory = knownIps.length > 0;
+
+                    if (!hasIpHistory || ipSeenBefore) {
+                        console.log(`[google-login] BLOCKED on hardware_id=${hardware_id} new_email=${email} existing_email=${hardwareCheck[0].email} existing_user_id=${existingUserId} ip=${clientIp} hasIpHistory=${hasIpHistory} ipSeenBefore=${ipSeenBefore}`);
+                        return res.status(403).json({
+                            message: `This device is already registered with ${hardwareCheck[0].email}. One account per device only.`,
+                            error_code: 'DEVICE_ALREADY_REGISTERED',
+                            existing_email: hardwareCheck[0].email
+                        });
+                    }
+
+                    console.log(`[google-login] ALLOWED despite hardware_id=${hardware_id} collision (different IP history) new_email=${email} existing_email=${hardwareCheck[0].email} existing_user_id=${existingUserId} ip=${clientIp}`);
                 }
             }
 
@@ -129,6 +166,7 @@ exports.loginWithGoogle = async (req, res) => {
                 );
 
                 if (deviceCheck.length > 0) {
+                    console.log(`[google-login] BLOCKED on device_id=${device_id} new_email=${email} existing_email=${deviceCheck[0].email} existing_user_id=${deviceCheck[0].id}`);
                     return res.status(403).json({
                         message: `This device is already registered with ${deviceCheck[0].email}. One account per device only.`,
                         error_code: 'DEVICE_ALREADY_REGISTERED',
@@ -144,6 +182,10 @@ exports.loginWithGoogle = async (req, res) => {
             );
 
             const userId = result.insertId;
+
+            if (clientIp) {
+                await db.query(QUERIES.USER.RECORD_LOGIN_IP, [userId, clientIp]);
+            }
 
             // Generate unique referral code for new user
             const newReferralCode = generateReferralCode();

@@ -23,6 +23,8 @@ module.exports = {
         GET_REFERRER_BY_REFERRED_USER: "SELECT r.referrer_id, u.referral_code FROM referrals r JOIN users u ON r.referrer_id = u.id WHERE r.referred_user_id = ? AND r.status = 'PENDING'",
         CHECK_PENDING_DELETE_REQUEST: "SELECT id FROM account_delete_requests WHERE user_id = ? AND status = 'PENDING'",
         CREATE_DELETE_REQUEST: "INSERT INTO account_delete_requests (user_id, email, balance, note, status) VALUES (?, ?, ?, ?, 'PENDING')",
+        GET_LOGIN_IPS: 'SELECT ip_address FROM user_login_ips WHERE user_id = ?',
+        RECORD_LOGIN_IP: 'INSERT INTO user_login_ips (user_id, ip_address) VALUES (?, ?) ON DUPLICATE KEY UPDATE last_seen_at = NOW()',
     },
     ADMIN: {
         GET_ALL_USERS: 'SELECT * FROM users ORDER BY created_at DESC',
