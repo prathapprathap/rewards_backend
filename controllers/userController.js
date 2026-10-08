@@ -15,6 +15,19 @@ function ipNetworkPrefix(ip) {
     return ip;
 }
 
+// A device-fingerprint collision (hardware_id or legacy device_id) is only
+// trustworthy when corroborated by IP history, since some phone
+// models/firmwares issue identical fingerprints to different physical units.
+// No history yet, or a matching network prefix, keeps the block; a clean
+// mismatch against existing history means it's likely a different device.
+async function isCorroboratedByIpHistory(existingUserId, clientIp) {
+    const [knownIps] = await db.query(QUERIES.USER.GET_LOGIN_IPS, [existingUserId]);
+    const hasIpHistory = knownIps.length > 0;
+    const clientPrefix = ipNetworkPrefix(clientIp);
+    const ipSeenBefore = knownIps.some(row => ipNetworkPrefix(row.ip_address) === clientPrefix);
+    return { shouldBlock: !hasIpHistory || ipSeenBefore, hasIpHistory, ipSeenBefore };
+}
+
 exports.loginWithGoogle = async (req, res) => {
     const { google_id, email, name, profile_pic, device_id, hardware_id, referral_code } = req.body;
 
@@ -132,12 +145,9 @@ exports.loginWithGoogle = async (req, res) => {
 
                 if (hardwareCheck.length > 0) {
                     const existingUserId = hardwareCheck[0].id;
-                    const [knownIps] = await db.query(QUERIES.USER.GET_LOGIN_IPS, [existingUserId]);
-                    const clientPrefix = ipNetworkPrefix(clientIp);
-                    const ipSeenBefore = knownIps.some(row => ipNetworkPrefix(row.ip_address) === clientPrefix);
-                    const hasIpHistory = knownIps.length > 0;
+                    const { shouldBlock, hasIpHistory, ipSeenBefore } = await isCorroboratedByIpHistory(existingUserId, clientIp);
 
-                    if (!hasIpHistory || ipSeenBefore) {
+                    if (shouldBlock) {
                         console.log(`[google-login] BLOCKED on hardware_id=${hardware_id} new_email=${email} existing_email=${hardwareCheck[0].email} existing_user_id=${existingUserId} ip=${clientIp} hasIpHistory=${hasIpHistory} ipSeenBefore=${ipSeenBefore}`);
                         return res.status(403).json({
                             message: `This device is already registered with ${hardwareCheck[0].email}. One account per device only.`,
@@ -166,12 +176,19 @@ exports.loginWithGoogle = async (req, res) => {
                 );
 
                 if (deviceCheck.length > 0) {
-                    console.log(`[google-login] BLOCKED on device_id=${device_id} new_email=${email} existing_email=${deviceCheck[0].email} existing_user_id=${deviceCheck[0].id}`);
-                    return res.status(403).json({
-                        message: `This device is already registered with ${deviceCheck[0].email}. One account per device only.`,
-                        error_code: 'DEVICE_ALREADY_REGISTERED',
-                        existing_email: deviceCheck[0].email
-                    });
+                    const existingUserId = deviceCheck[0].id;
+                    const { shouldBlock, hasIpHistory, ipSeenBefore } = await isCorroboratedByIpHistory(existingUserId, clientIp);
+
+                    if (shouldBlock) {
+                        console.log(`[google-login] BLOCKED on device_id=${device_id} new_email=${email} existing_email=${deviceCheck[0].email} existing_user_id=${existingUserId} ip=${clientIp} hasIpHistory=${hasIpHistory} ipSeenBefore=${ipSeenBefore}`);
+                        return res.status(403).json({
+                            message: `This device is already registered with ${deviceCheck[0].email}. One account per device only.`,
+                            error_code: 'DEVICE_ALREADY_REGISTERED',
+                            existing_email: deviceCheck[0].email
+                        });
+                    }
+
+                    console.log(`[google-login] ALLOWED despite device_id=${device_id} collision (different IP history) new_email=${email} existing_email=${deviceCheck[0].email} existing_user_id=${existingUserId} ip=${clientIp}`);
                 }
             }
 
